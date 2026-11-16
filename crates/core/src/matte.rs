@@ -42,13 +42,16 @@ pub fn pick(cfg: &Config, want: &str) -> Option<(&'static str, PathBuf)> {
 }
 
 fn session(path: &Path) -> Result<Session> {
-    let gpu = Session::builder()
-        .and_then(|b| b.with_execution_providers([ort::execution_providers::DirectMLExecutionProvider::default().build()]))
-        .and_then(|b| b.commit_from_file(path));
-    match gpu {
-        Ok(s) => Ok(s),
-        Err(_) => Session::builder().and_then(|b| b.commit_from_file(path)).map_err(|e| anyhow!("cannot load {}: {e}", path.display())),
+    #[cfg(windows)]
+    {
+        let gpu = Session::builder()
+            .and_then(|b| b.with_execution_providers([ort::execution_providers::DirectMLExecutionProvider::default().build()]))
+            .and_then(|b| b.commit_from_file(path));
+        if let Ok(s) = gpu {
+            return Ok(s);
+        }
     }
+    Session::builder().and_then(|b| b.commit_from_file(path)).map_err(|e| anyhow!("cannot load {}: {e}", path.display()))
 }
 
 /// One model, run frame after frame (RVM keeps its recurrent state between frames).
