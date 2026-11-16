@@ -1,0 +1,30 @@
+{
+ "_name": "Telestrator",
+ "_about": "Sports-replay packaging: a subtitle bar, yellow marks and labels around the face, dark tactics boards.",
+ "_recipe": "telestrator",
+ "_grammar": "Native: subtitle bar with a yellow key word, a take `hold` for the freeze, `chips` / `big` as label cards, `scene` kind `card` on #0C1411 for boards. Not native: rings, marker arrows and zones drawn on the frozen frame.",
+ "brand": {
+  "accent": "#FFD60A",
+  "accentDark": "#D9B400",
+  "ink": "#0C1411",
+  "capSize": 50,
+  "font": "Inter Tight",
+  "onAccent": "#0C1411"
+ },
+ "captions": {
+  "style": "pill",
+  "font": "Inter Tight",
+  "weight": 800,
+  "case": "upper",
+  "bg": "bar",
+  "bgColor": "#0C1411",
+  "bgAlpha": 0.9,
+  "keyword": "color",
+  "group": 4,
+  "size": 50,
+  "y": 1300
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

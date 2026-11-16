@@ -1,0 +1,45 @@
+{
+ "kesit": "ppet/1",
+ "version": 1,
+ "label": "Speech bubble",
+ "desc": "A speech bubble with a tail. Text wraps inside; params change text, colours and which side the tail is on.",
+ "tags": [
+  "bubble",
+  "speech",
+  "balon",
+  "comic",
+  "text"
+ ],
+ "size": [
+  700,
+  360
+ ],
+ "params": {
+  "text": {
+   "type": "text",
+   "default": "Hello!",
+   "label": "Text"
+  },
+  "bg": {
+   "type": "color",
+   "default": "#ffffff",
+   "label": "Background"
+  },
+  "color": {
+   "type": "color",
+   "default": "#111111",
+   "label": "Text colour"
+  },
+  "tail": {
+   "type": "select",
+   "options": [
+    "left",
+    "right"
+   ],
+   "default": "left",
+   "label": "Tail side"
+  }
+ },
+ "example": "KE.puppet(g, 'bubble-1', t, { use: 'bubble', x: W / 2, y: H * 0.3, t0: 2, t1: 5, params: { text: 'Try this' } })",
+ "draw": "function (g, p, t, s, u) {\n  const W = 700, H = 300, tx = p.tail === 'right' ? W * 0.72 : W * 0.22;\n  g.save();\n  g.shadowColor = 'rgba(0,0,0,.25)'; g.shadowBlur = 24; g.shadowOffsetY = 8;\n  g.fillStyle = p.bg; g.beginPath(); g.roundRect(0, 0, W, H, 60); g.fill();\n  g.beginPath(); g.moveTo(tx - 40, H - 4); g.lineTo(tx + (p.tail === 'right' ? 50 : -30), 356); g.lineTo(tx + 40, H - 4); g.closePath(); g.fill();\n  g.shadowColor = 'transparent';\n  g.fillStyle = p.color; g.textAlign = 'center'; g.textBaseline = 'middle';\n  let size = 84; const words = String(p.text).split(/\\s+/); let lines;\n  for (; size > 28; size -= 4) {\n    g.font = `800 ${size}px \"Segoe UI\", system-ui, sans-serif`; lines = [''];\n    for (const w of words) { const tryL = lines[lines.length - 1] ? lines[lines.length - 1] + ' ' + w : w; if (g.measureText(tryL).width > W - 100 && lines[lines.length - 1]) lines.push(w); else lines[lines.length - 1] = tryL; }\n    if (lines.length * size * 1.15 < H - 60) break;\n  }\n  lines.forEach((l, i) => g.fillText(l, W / 2, H / 2 + (i - (lines.length - 1) / 2) * size * 1.15));\n  g.restore();\n}"
+}

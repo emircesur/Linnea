@@ -1,0 +1,29 @@
+{
+ "_name": "Tactile paper",
+ "_about": "Printed paper on a maroon ground, a crimson marker, black pill captions.",
+ "_recipe": "tactile-paper",
+ "_grammar": "Native: black pill captions with a crimson marker key word, `scene` kind `card` on maroon (#5B1A22) or paper (#EFE6D6). Not native: page folds and the 8 fps stop-motion clock.",
+ "brand": {
+  "accent": "#C2183A",
+  "accentDark": "#8E1029",
+  "ink": "#16110F",
+  "capSize": 52,
+  "font": "Inter"
+ },
+ "captions": {
+  "style": "pill",
+  "font": "Inter",
+  "weight": 700,
+  "bg": "pill",
+  "bgColor": "#0B0B0B",
+  "bgAlpha": 1,
+  "keyword": "marker",
+  "group": 4,
+  "y": 1300
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {
+  "grain": 0.05
+ }
+}

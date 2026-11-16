@@ -1,0 +1,26 @@
+{
+ "_name": "Kinetic doc",
+ "_about": "Black-and-white archive documentary with one red accent: words pop on as spoken in one centred line.",
+ "_recipe": "kinetic-doc",
+ "_grammar": "Native: pop-on captions with a red key word, `image` scenes with `grade: grayscale(1) contrast(1.1)`, `scene` kind `word` on grey for turn lines. Not native: prints, windows and polaroid frames around pictures.",
+ "brand": {
+  "accent": "#D63A2F",
+  "accentDark": "#B02E25",
+  "ink": "#111111",
+  "capSize": 72,
+  "font": "Oswald"
+ },
+ "captions": {
+  "style": "highlighter",
+  "font": "Oswald",
+  "weight": 700,
+  "case": "upper",
+  "entry": "punch",
+  "keyword": "color",
+  "group": 4,
+  "y": 1220
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

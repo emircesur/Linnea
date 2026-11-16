@@ -1,0 +1,29 @@
+{
+ "_name": "Swiss Grid",
+ "_about": "International Typographic Style: one typeface, one red, words set flush left on a strict grid.",
+ "_recipe": "swiss-grid",
+ "_grammar": "Native: flush-left captions with one red key word, `scene` kind `word` / `card` on paper (#F2F0EA) for poster cards, `big` with `count` for chapter numerals. Not native: the visible grid construction.",
+ "brand": {
+  "accent": "#E3120B",
+  "accentDark": "#B80E08",
+  "ink": "#111111",
+  "capSize": 64,
+  "font": "Inter"
+ },
+ "captions": {
+  "style": "highlighter",
+  "font": "Inter",
+  "weight": 700,
+  "align": "left",
+  "x": 72,
+  "maxw": 900,
+  "entry": "cut",
+  "keyword": "color",
+  "group": 4,
+  "size": 64,
+  "y": 1220
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

@@ -1,0 +1,33 @@
+//! Kesit core: a local reel editor that a person and an agent drive with the same tools.
+pub mod ai;
+pub mod analyze;
+pub mod ass;
+pub mod beats;
+pub mod cdp;
+pub mod config;
+pub mod cues;
+pub mod extra;
+pub mod film;
+pub mod fonts;
+pub mod jobs;
+pub mod layers;
+pub mod llm;
+pub mod manage;
+pub mod matte;
+pub mod mcp;
+pub mod media;
+pub mod net;
+pub mod proc;
+pub mod publish;
+pub mod project;
+pub mod puppets;
+pub mod render;
+pub mod server;
+pub mod sfx;
+pub mod styles;
+pub mod studio;
+pub mod timeline;
+pub mod tools;
+pub mod util;
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

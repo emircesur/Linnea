@@ -1,0 +1,49 @@
+{
+ "kesit": "rppet/1",
+ "version": 1,
+ "label": "Pencil",
+ "desc": "Yellow pencil. idle: stands and sways a little; write: its tip writes a wavy line left to right over the state's length and leaves ink behind.",
+ "tags": [
+  "object",
+  "pencil",
+  "kalem",
+  "writing",
+  "school"
+ ],
+ "size": [
+  600,
+  600
+ ],
+ "params": {
+  "body": {
+   "type": "color",
+   "default": "#f2c14e",
+   "label": "Body"
+  },
+  "ink": {
+   "type": "color",
+   "default": "#1d1d1f",
+   "label": "Ink"
+  },
+  "trail": {
+   "type": "bool",
+   "default": true,
+   "label": "Leave a line"
+  }
+ },
+ "states": {
+  "idle": {
+   "dur": 2,
+   "loop": true,
+   "label": "Idle"
+  },
+  "write": {
+   "dur": 3,
+   "loop": false,
+   "label": "Writing"
+  }
+ },
+ "initial": "idle",
+ "example": "KE.puppet(g, 'pencil-1', t, { use: 'pencil', x: W / 2, y: H / 2, t0: 1, t1: 6, states: [{ state: 'idle', t0: 0 }, { state: 'write', t0: 1.5 }] })",
+ "draw": "function (g, p, t, s, u) {\n  const writing = s.name === 'write';\n  const k = writing ? u.ease.inOut(s.k) : 0;\n  const wave = x => 470 + Math.sin(x * 38) * 16 * Math.sin(x * Math.PI);\n  const tx = writing ? 60 + 480 * k : 300, ty = writing ? wave(k) : 464 - Math.sin(t * 3) * 6;\n  if (writing && p.trail) {\n    g.save(); g.strokeStyle = p.ink; g.lineWidth = 7; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath();\n    for (let i = 0; i <= 120; i++) { const x = (i / 120) * k, X = 60 + 480 * x, Y = wave(x); if (i) g.lineTo(X, Y); else g.moveTo(X, Y); }\n    g.stroke(); g.restore();\n  }\n  const B = 44;\n  g.save(); g.translate(tx, ty); g.rotate(0.6 + (writing ? Math.sin(s.t * 14) * 0.05 : Math.sin(t * 3) * 0.04));\n  g.fillStyle = p.ink; g.beginPath(); g.moveTo(0, 0); g.lineTo(-8, -22); g.lineTo(8, -22); g.closePath(); g.fill();\n  g.fillStyle = '#e8c9a0'; g.beginPath(); g.moveTo(-8, -22); g.lineTo(-B / 2, -70); g.lineTo(B / 2, -70); g.lineTo(8, -22); g.closePath(); g.fill();\n  g.fillStyle = p.body; g.fillRect(-B / 2, -340, B, 270);\n  g.fillStyle = 'rgba(0,0,0,.13)'; g.fillRect(B / 6, -340, B / 3, 270);\n  g.fillStyle = '#b9bcc4'; g.fillRect(-B / 2, -366, B, 26);\n  g.fillStyle = '#e98a9a'; g.beginPath(); g.roundRect(-B / 2, -400, B, 34, [12, 12, 0, 0]); g.fill();\n  g.restore();\n}"
+}

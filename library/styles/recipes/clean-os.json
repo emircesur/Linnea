@@ -1,0 +1,26 @@
+{
+ "_name": "Clean OS",
+ "_about": "Apple-clean lowercase word cards that resolve from blur on the chest, one system accent per reel.",
+ "_recipe": "clean-os",
+ "_grammar": "Native: blur-resolve lowercase captions, `scene` kind `ui` / `word` for the phone-UI moments, `big` cards. Not native: the red Figma selection box with a cursor, the QuickType card, the Markup pen.",
+ "brand": {
+  "accent": "#0A84FF",
+  "accentDark": "#0060DF",
+  "ink": "#111111",
+  "capSize": 66,
+  "font": "Inter"
+ },
+ "captions": {
+  "style": "editorial",
+  "font": "Inter",
+  "weight": 600,
+  "case": "lower",
+  "tracking": -0.04,
+  "y": 1250,
+  "group": 3,
+  "keyword": "color"
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

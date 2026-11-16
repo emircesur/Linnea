@@ -1,0 +1,20 @@
+{
+ "_name": "stan style",
+ "_about": "Seated tool tutorial: small lowercase chest captions, a screen recording in the top band, step labels under the chin.",
+ "_recipe": "stan-style",
+ "_grammar": "Native: chest captions, `broll` with `mode: split` for the screen recording band, `chips` and `big` for step labels. Not native: the speaker cut-out over the panel (needs a person matte), drawn-on diagram lines. Needs real screen recordings.",
+ "brand": {
+  "accent": "#FFFFFF",
+  "accentDark": "#000000",
+  "ink": "#000000",
+  "capSize": 38,
+  "font": "Inter",
+  "onAccent": "#000000"
+ },
+ "captions": {
+  "style": "chest"
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

@@ -1,0 +1,34 @@
+{
+ "_name": "Hologram HUD",
+ "_about": "A wireframe scan interface: mono type, cyan lines, values that turn amber, a HUD subtitle.",
+ "_recipe": "hologram-hud",
+ "_grammar": "Native: HUD subtitle bar, `scene` kind `ui` and `stats` on near-black for values that roll in, `chips` for docked toggles. Not native: the wireframe model and target boxes.",
+ "brand": {
+  "accent": "#FFB020",
+  "accentDark": "#5FE3FF",
+  "ink": "#05080C",
+  "capSize": 44,
+  "font": "JetBrains Mono",
+  "onAccent": "#05080C"
+ },
+ "captions": {
+  "style": "pill",
+  "font": "JetBrains Mono",
+  "weight": 500,
+  "case": "upper",
+  "bg": "bar",
+  "bgColor": "#05080C",
+  "bgAlpha": 0.72,
+  "color": "#5FE3FF",
+  "active": "none",
+  "keyword": "color",
+  "group": 4,
+  "size": 44,
+  "y": 1320
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {
+  "vignette": 0.3
+ }
+}

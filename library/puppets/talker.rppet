@@ -1,0 +1,71 @@
+{
+ "kesit": "rppet/1",
+ "version": 1,
+ "label": "Narrator",
+ "desc": "A talking narrator, head and shoulders. Its mouth follows the film voice and it blinks by itself (mouth and blink params); states: idle, nod (a nod), wave (waves a hand).",
+ "tags": [
+  "character",
+  "narrator",
+  "talking",
+  "person"
+ ],
+ "size": [
+  400,
+  400
+ ],
+ "params": {
+  "skin": {
+   "type": "color",
+   "default": "#f1c7a3",
+   "label": "Skin"
+  },
+  "hair": {
+   "type": "color",
+   "default": "#3a2a22",
+   "label": "Hair"
+  },
+  "shirt": {
+   "type": "color",
+   "default": "#2f6fdf",
+   "label": "Shirt"
+  },
+  "mouth": {
+   "type": "number",
+   "default": 0,
+   "min": 0,
+   "max": 1,
+   "step": 0.05,
+   "label": "Mouth (follows the voice if left alone)"
+  },
+  "blink": {
+   "type": "number",
+   "default": 0,
+   "min": 0,
+   "max": 1,
+   "step": 0.05,
+   "label": "Eyes (blink on their own if left alone)"
+  }
+ },
+ "states": {
+  "idle": {
+   "dur": 2,
+   "loop": true,
+   "label": "Idle"
+  },
+  "nod": {
+   "dur": 0.8,
+   "loop": false,
+   "label": "Nod",
+   "blend": 0.15
+  },
+  "wave": {
+   "dur": 1.6,
+   "loop": true,
+   "label": "Wave",
+   "blend": 0.2
+  }
+ },
+ "initial": "idle",
+ "example": "KE.puppet(g, 'narrator', t, { use: 'talker', x: W / 2, y: H * 0.8, scale: 1.2, t0: 0, t1: DUR, states: [{ state: 'wave', t0: 0 }, { state: 'idle', t0: 1.6, blend: 0.3 }] })",
+ "draw": "function (g, p, t, s, u) {\n  const W = u.W, H = u.H, cx = W / 2, m = u.clamp(+p.mouth || 0, 0, 1), b = u.clamp(+p.blink || 0, 0, 1);\n  const nod = s.name === 'nod' ? Math.sin(s.k * Math.PI * 2) * 0.09 : 0;\n  const wave = s.name === 'wave' ? Math.sin(s.t * 9) : 0;\n  g.save();\n  g.translate(0, Math.sin(t * 2.1) * H * 0.006 + m * H * 0.004);\n  // body\n  g.fillStyle = p.shirt;\n  g.beginPath(); g.moveTo(cx - W * 0.34, H); g.quadraticCurveTo(cx - W * 0.33, H * 0.73, cx, H * 0.71); g.quadraticCurveTo(cx + W * 0.33, H * 0.73, cx + W * 0.34, H); g.closePath(); g.fill();\n  // a raised arm while waving, turning at the shoulder\n  if (s.name === 'wave') {\n    g.save(); g.translate(cx + W * 0.27, H * 0.82); g.rotate(-2.75 + wave * 0.3);\n    g.fillStyle = p.shirt; g.beginPath(); g.roundRect(-W * 0.045, 0, W * 0.09, H * 0.25, W * 0.04); g.fill();\n    g.fillStyle = p.skin; g.beginPath(); g.arc(0, H * 0.27, W * 0.048, 0, Math.PI * 2); g.fill();\n    g.restore();\n  }\n  // neck\n  g.fillStyle = p.skin; g.fillRect(cx - W * 0.05, H * 0.6, W * 0.1, H * 0.13);\n  // head: tilts a little while talking, nods in the nod state\n  g.save(); g.translate(cx, H * 0.42); g.rotate(Math.sin(t * 1.3) * 0.03 + m * 0.02 + nod);\n  g.fillStyle = p.skin; g.beginPath(); g.ellipse(0, 0, W * 0.2, H * 0.24, 0, 0, Math.PI * 2); g.fill();\n  g.beginPath(); g.ellipse(-W * 0.2, H * 0.01, W * 0.03, H * 0.05, 0, 0, Math.PI * 2); g.ellipse(W * 0.2, H * 0.01, W * 0.03, H * 0.05, 0, 0, Math.PI * 2); g.fill();\n  // hair\n  g.fillStyle = p.hair;\n  g.beginPath(); g.ellipse(0, -H * 0.11, W * 0.215, H * 0.15, 0, Math.PI, Math.PI * 2); g.fill();\n  g.beginPath(); g.ellipse(0, -H * 0.12, W * 0.205, H * 0.075, 0, 0, Math.PI); g.fill();\n  // cheeks\n  g.fillStyle = 'rgba(231,111,111,.22)';\n  g.beginPath(); g.ellipse(-W * 0.12, H * 0.06, W * 0.035, H * 0.022, 0, 0, Math.PI * 2); g.ellipse(W * 0.12, H * 0.06, W * 0.035, H * 0.022, 0, 0, Math.PI * 2); g.fill();\n  // eyes: closed by p.blink\n  const eh = Math.max(H * 0.003, H * 0.03 * (1 - b));\n  g.fillStyle = '#1d1d22';\n  for (const sx of [-1, 1]) { g.beginPath(); g.ellipse(sx * W * 0.075, -H * 0.01, W * 0.022, eh, 0, 0, Math.PI * 2); g.fill(); }\n  if (b < 0.5) { g.fillStyle = '#fff'; for (const sx of [-1, 1]) { g.beginPath(); g.arc(sx * W * 0.075 + W * 0.007, -H * 0.018, W * 0.006, 0, Math.PI * 2); g.fill(); } }\n  // brows lift a little with the voice\n  g.strokeStyle = p.hair; g.lineWidth = W * 0.013; g.lineCap = 'round';\n  for (const sx of [-1, 1]) { g.beginPath(); g.moveTo(sx * W * 0.045, -H * 0.062 - m * H * 0.01); g.lineTo(sx * W * 0.108, -H * 0.068 - m * H * 0.012); g.stroke(); }\n  // mouth: opened by p.mouth, a smile when shut\n  if (m > 0.08) {\n    g.fillStyle = '#5e1b26';\n    g.beginPath(); g.ellipse(0, H * 0.115, W * (0.045 + m * 0.012), H * (0.008 + m * 0.045), 0, 0, Math.PI * 2); g.fill();\n    g.fillStyle = '#d9606b';\n    g.beginPath(); g.ellipse(0, H * 0.115 + H * (0.004 + m * 0.03), W * 0.028, H * 0.006 + m * H * 0.01, 0, 0, Math.PI * 2); g.fill();\n  } else {\n    g.strokeStyle = '#5e1b26'; g.lineWidth = W * 0.011;\n    g.beginPath(); g.arc(0, H * 0.085, W * 0.05, Math.PI * 0.22, Math.PI * 0.78); g.stroke();\n  }\n  g.restore();\n  g.restore();\n}"
+}

@@ -1,0 +1,21 @@
+{
+ "_name": "POV montage",
+ "_about": "First-person clips cut into a story with a freeze-frame moment and an editorial caption layer.",
+ "_recipe": "pov-montage",
+ "_grammar": "Native: several takes, a take `hold` for the freeze, editorial captions, a `meme` beat on the freeze. Not native: speed ramps inside a take.",
+ "brand": {
+  "accent": "#D13F34",
+  "accentDark": "#B93026",
+  "ink": "#262626",
+  "capSize": 58,
+  "font": "Montserrat"
+ },
+ "captions": {
+  "style": "editorial",
+  "group": 3,
+  "y": 1180
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

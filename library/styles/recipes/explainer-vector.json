@@ -1,0 +1,26 @@
+{
+ "_name": "Vector explainer",
+ "_about": "No camera: a narrator over drawn pictures, serif headlines and word-reveal captions.",
+ "_recipe": "explainer-vector",
+ "_grammar": "Native: word-reveal serif captions over `image` scenes (your drawings or stills) and `textfx` `headline` panels. Not native: the continuous SVG world and the travelling camera. Needs a narration track as the source.",
+ "brand": {
+  "accent": "#2B4C9B",
+  "accentDark": "#1D3570",
+  "ink": "#1B1B1B",
+  "capSize": 60,
+  "font": "Playfair Display"
+ },
+ "captions": {
+  "style": "highlighter",
+  "font": "Playfair Display",
+  "weight": 500,
+  "entry": "fade",
+  "keyword": "none",
+  "group": 5,
+  "size": 60,
+  "y": 1380
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

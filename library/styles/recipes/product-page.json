@@ -1,0 +1,29 @@
+{
+ "_name": "Product page",
+ "_about": "A tool review laid out like a product page: one spoken word in a grey pill, heavy sans titles with an italic serif.",
+ "_recipe": "product-page",
+ "_grammar": "Native: one-word grey pill captions, `scene` kind `card` on white with the product picture (`image`), `textfx` `headline` for two-tier titles. Not native: the virtual camera over rebuilt UI, the speaker cut-out over a rounded card.",
+ "brand": {
+  "accent": "#111111",
+  "accentDark": "#000000",
+  "ink": "#111111",
+  "capSize": 52,
+  "font": "Inter",
+  "serif": "Playfair Display"
+ },
+ "captions": {
+  "style": "pill",
+  "font": "Inter",
+  "weight": 600,
+  "bg": "pill",
+  "bgColor": "#ECECEF",
+  "bgAlpha": 1,
+  "color": "#111111",
+  "active": "none",
+  "group": 1,
+  "y": 1300
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

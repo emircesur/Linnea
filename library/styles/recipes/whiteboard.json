@@ -1,0 +1,30 @@
+{
+ "_name": "Whiteboard",
+ "_about": "White pill captions with the spoken word swept in marker yellow; thoughts drawn as board pages.",
+ "_recipe": "whiteboard",
+ "_grammar": "Native: white pill captions with a yellow sweep, `scene` kind `card` on white with handwriting lines for board pages. Not native: live marker strokes, the split screen and the eraser.",
+ "brand": {
+  "accent": "#FFE14D",
+  "accentDark": "#E0A100",
+  "ink": "#1E1F24",
+  "capSize": 54,
+  "font": "Inter",
+  "hand": "Caveat",
+  "onAccent": "#1E1F24"
+ },
+ "captions": {
+  "style": "pill",
+  "font": "Inter",
+  "weight": 700,
+  "bg": "pill",
+  "bgColor": "#FFFFFF",
+  "bgAlpha": 1,
+  "color": "#1E1F24",
+  "active": "box",
+  "group": 4,
+  "y": 1210
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

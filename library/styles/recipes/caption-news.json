@@ -1,0 +1,31 @@
+{
+ "_name": "Caption News",
+ "_about": "Huge chunked captions slammed on the spoken words, one key word per caption on a honey block.",
+ "_recipe": "caption-news",
+ "_grammar": "Native: left-aligned slab captions with a honey key word block, a `title` sting, `quote` for the document beat with a source header. Not native: the channel bug animation, highlighter sweeps on a document.",
+ "brand": {
+  "accent": "#FFC628",
+  "accentDark": "#E0A800",
+  "ink": "#101216",
+  "capSize": 92,
+  "font": "Fira Sans",
+  "onAccent": "#101216"
+ },
+ "captions": {
+  "style": "hype",
+  "font": "Fira Sans",
+  "weight": 800,
+  "case": "upper",
+  "align": "left",
+  "x": 64,
+  "maxw": 916,
+  "active": "none",
+  "keyword": "box",
+  "group": 3,
+  "size": 92,
+  "y": 1180
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

@@ -1,0 +1,24 @@
+[package]
+name = "kesit-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["face"]
+face = ["dep:rustface"]
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+dirs = "6"
+ureq = { version = "3", features = ["json", "platform-verifier"] }
+tiny_http = "0.12"
+ttf-parser = "0.25"
+fastrand = "2"
+tungstenite = { version = "0.26", default-features = false, features = ["handshake"] }
+base64 = "0.22"
+ort = { version = "=2.0.0-rc.10", features = ["directml"] }
+rfd = { version = "0.15", default-features = false, features = ["common-controls-v6"] }
+rustface = { version = "0.1", optional = true }

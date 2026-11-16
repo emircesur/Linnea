@@ -1,0 +1,33 @@
+{
+ "_name": "Face RESULT",
+ "_about": "RESULT around the face: big two-tier captions on a navy card under the chin, props beside the face, never on it.",
+ "_recipe": "result-podcast",
+ "_grammar": "Native: face-aware navy caption card, `image` / `quote` beats placed in the zones beside the face. Not native: paper props and polaroid physics.",
+ "brand": {
+  "accent": "#F2E3C6",
+  "accentDark": "#C9B48A",
+  "ink": "#121D32",
+  "capSize": 64,
+  "font": "Inter Tight",
+  "hand": "Caveat"
+ },
+ "captions": {
+  "style": "pill",
+  "font": "Inter Tight",
+  "weight": 800,
+  "bg": "card",
+  "bgColor": "#121D32",
+  "bgAlpha": 0.86,
+  "group": 2,
+  "keyword": "serif",
+  "keywordFont": "Caveat",
+  "keywordScale": 2.0,
+  "y": 1260
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {
+  "grain": 0.05,
+  "vignette": 0.3
+ }
+}

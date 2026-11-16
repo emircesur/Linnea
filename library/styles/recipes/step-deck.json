@@ -1,0 +1,27 @@
+{
+ "_name": "Step Deck",
+ "_about": "A numbered tips deck: every word on its onset above the head, word cards between face shots, giant italic numerals.",
+ "_recipe": "step-deck",
+ "_grammar": "Native: single-word captions above the head, `scene` kind `word` / `card` on navy or off-white for word cards, `big` with `count` for step numerals. Not native: captions tucked behind the head (needs a person matte), paper prints.",
+ "brand": {
+  "accent": "#2F6BFF",
+  "accentDark": "#1F4FD1",
+  "ink": "#131C3A",
+  "capSize": 104,
+  "font": "Inter Tight"
+ },
+ "captions": {
+  "style": "hype",
+  "font": "Inter Tight",
+  "weight": 800,
+  "italic": true,
+  "size": 104,
+  "active": "none",
+  "keyword": "color",
+  "group": 1,
+  "y": 380
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

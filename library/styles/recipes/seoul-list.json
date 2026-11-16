@@ -1,0 +1,26 @@
+{
+ "_name": "Seoul list",
+ "_about": "A voice-over list over fast B-roll: one big word per line in an italic serif or a heavy sans, white with a tight halo.",
+ "_recipe": "seoul-list",
+ "_grammar": "Native: `broll` beats full screen with `title` words (font Playfair Display, italic) on their spoken times, `scene` kind `card` for white flash pages. Not native: collage pages, triptychs, the iMessage outro.",
+ "brand": {
+  "accent": "#FF3B30",
+  "accentDark": "#D92B21",
+  "ink": "#111111",
+  "capSize": 54,
+  "font": "Inter Tight",
+  "serif": "Playfair Display"
+ },
+ "captions": {
+  "style": "mini",
+  "font": "Inter Tight",
+  "weight": 800,
+  "size": 54,
+  "y": 1340,
+  "group": 4,
+  "outline": 3
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

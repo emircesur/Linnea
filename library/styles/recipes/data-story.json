@@ -1,0 +1,33 @@
+{
+ "_name": "Data Story",
+ "_about": "Pencil charts of real, sourced numbers on cream paper; a serif figure caption under the speaker.",
+ "_recipe": "data-story",
+ "_grammar": "Native: paper caption band with an underlined key word, `scene` kind `stats` on cream paper for the numbers (each with its source in `sub`). Not native: charts that draw themselves mark by mark. Only real, sourced numbers.",
+ "brand": {
+  "accent": "#C8372D",
+  "accentDark": "#2B4C9B",
+  "ink": "#22201C",
+  "capSize": 58,
+  "font": "Playfair Display"
+ },
+ "captions": {
+  "style": "pill",
+  "font": "Playfair Display",
+  "weight": 500,
+  "align": "left",
+  "x": 64,
+  "maxw": 952,
+  "bg": "card",
+  "bgColor": "#F3EBDD",
+  "bgAlpha": 1,
+  "color": "#22201C",
+  "active": "none",
+  "keyword": "underline",
+  "group": 5,
+  "size": 58,
+  "y": 1230
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}

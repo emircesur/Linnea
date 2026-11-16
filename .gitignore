@@ -1,0 +1,11 @@
+# build output
+/target/
+/dist/
+/bin/
+/ui/node_modules/
+/ui/dist/
+*.part
+*.tmp*
+
+# local notes
+/KALAN-HATALAR.md

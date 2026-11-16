@@ -1,0 +1,33 @@
+{
+ "_name": "RESULT",
+ "_about": "Warm podcast edit: one or two Inter Tight words on a navy card, a handwritten key word, film grain and dust.",
+ "_recipe": "result-podcast",
+ "_grammar": "Native: navy caption card with a handwritten key word, `quote` and `image` beats for polaroids and quote cards, grain + vignette. Not native: stop-motion paper stack, film-burn leaks, comic props.",
+ "brand": {
+  "accent": "#F2E3C6",
+  "accentDark": "#C9B48A",
+  "ink": "#121D32",
+  "capSize": 62,
+  "font": "Inter Tight",
+  "hand": "Caveat"
+ },
+ "captions": {
+  "style": "pill",
+  "font": "Inter Tight",
+  "weight": 700,
+  "bg": "card",
+  "bgColor": "#121D32",
+  "bgAlpha": 0.86,
+  "group": 2,
+  "keyword": "serif",
+  "keywordFont": "Caveat",
+  "keywordScale": 1.9,
+  "y": 1240
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {
+  "grain": 0.06,
+  "vignette": 0.35
+ }
+}

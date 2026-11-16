@@ -1,0 +1,33 @@
+{
+ "_name": "Halftone Dossier",
+ "_about": "A retro printed case file: cream paper, navy ink, a yellow highlight, a navy caption bar.",
+ "_recipe": "halftone-dossier",
+ "_grammar": "Native: navy caption bar with a yellow key word block, `scene` kind `card` on paper (#F4ECDD) with heavy headlines, `list` with a stamp. Not native: halftone dots, misregistered overprint, boiling drawings.",
+ "brand": {
+  "accent": "#FFC628",
+  "accentDark": "#E8384F",
+  "ink": "#1D2340",
+  "capSize": 54,
+  "font": "Fira Sans",
+  "onAccent": "#1D2340"
+ },
+ "captions": {
+  "style": "pill",
+  "font": "Fira Sans",
+  "weight": 800,
+  "bg": "bar",
+  "bgColor": "#1D2340",
+  "bgAlpha": 1,
+  "color": "#FFF4E2",
+  "active": "none",
+  "keyword": "box",
+  "group": 4,
+  "size": 54,
+  "y": 1300
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {
+  "grain": 0.05
+ }
+}

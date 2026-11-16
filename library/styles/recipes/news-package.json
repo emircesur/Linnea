@@ -1,0 +1,29 @@
+{
+ "_name": "News Package",
+ "_about": "The speaker as the anchor of a one-story TV segment: a chest strap, a category tab, a rundown of points.",
+ "_recipe": "news-package",
+ "_grammar": "Native: lower-third strap captions, `list` with a stamp for the rundown, `big` and `chips` for package cards. Not native: the split-flap board and the flying bug.",
+ "brand": {
+  "accent": "#E8384F",
+  "accentDark": "#B8273B",
+  "ink": "#0E1220",
+  "capSize": 50,
+  "font": "Fira Sans"
+ },
+ "captions": {
+  "style": "pill",
+  "font": "Fira Sans",
+  "weight": 800,
+  "case": "upper",
+  "bg": "bar",
+  "bgColor": "#0E1220",
+  "bgAlpha": 0.94,
+  "keyword": "color",
+  "group": 4,
+  "size": 50,
+  "y": 1290
+ },
+ "sfxProfile": "standard",
+ "music": null,
+ "look": {}
+}
