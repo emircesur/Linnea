@@ -22,6 +22,11 @@ def cargo(*args):
 def main():
     if not os.path.isfile(os.path.join(ROOT, "ui", "dist", "index.html")):
         sys.exit("build the interface first: cd ui && pnpm install && pnpm build")
+    # ort-sys 2.0.0-rc.10 copies DLLs beside OUT_DIR and into examples/deps,
+    # but does not create those folders. Support both Cargo build layouts.
+    for base in (os.path.join(TARGET, "release"), os.path.join(TARGET, "release", "build")):
+        for folder in ("examples", "deps"):
+            os.makedirs(os.path.join(base, folder), exist_ok=True)
     cargo("build", "--release", "-p", "linnea-cli", "-p", "linnea-app")
     os.makedirs(DIST, exist_ok=True)
     payload = os.path.join(DIST, "payload.zip")
@@ -31,7 +36,11 @@ def main():
             built = os.path.join(TARGET, "release", exe)
             # the onnxruntime build step leaves DirectML.dll as a link that can point nowhere: then the copy
             # kept in bin/ goes in, and without either the installed app would not start, so stop
-            src = built if os.path.isfile(built) else os.path.join(ROOT, "bin", exe)
+            src = built
+            if exe == "DirectML.dll" and not os.path.isfile(src):
+                src = os.path.join(TARGET, "release", "build", exe)
+            if not os.path.isfile(src):
+                src = os.path.join(ROOT, "bin", exe)
             if not os.path.isfile(src):
                 sys.exit(f"{exe} is missing from {built} and from bin/")
             z.write(src, f"bin/{exe}")
