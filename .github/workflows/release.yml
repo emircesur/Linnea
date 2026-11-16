@@ -4,6 +4,7 @@ name: Release
 
 on:
   push:
+    branches: ["main"]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -52,7 +53,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python pack.py
+      - name: Build the Windows installer
+        shell: pwsh
+        run: |
+          python pack.py 2>&1 | Tee-Object -FilePath windows-build.log
+          $buildExit = $LASTEXITCODE
+          if ($buildExit -ne 0) {
+            $errors = Select-String -Path windows-build.log -Pattern 'error:|error\[|missing from|Failed to GET|hash of downloaded|panicked at'
+            foreach ($entry in ($errors | Select-Object -Last 12)) {
+              $message = $entry.Line.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Host "::error title=Windows build::$message"
+            }
+          }
+          exit $buildExit
       - uses: actions/upload-artifact@v4
         with:
           name: windows
