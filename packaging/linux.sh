@@ -4,7 +4,7 @@
 set -euo pipefail
 ver="${1:-}"
 ver="${ver#v}"
-[[ "$ver" =~ ^[0-9] ]] || ver="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+[[ "$ver" =~ ^[0-9] ]] || ver="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -1)"
 target="${CARGO_TARGET_DIR:-target}/release"
 
 name="Linnea-$ver-linux-x64"

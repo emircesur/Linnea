@@ -1,5 +1,5 @@
 # Builds Linnea for Windows, macOS and Linux. A tag such as v0.1.0 publishes the three as a GitHub release;
-# a manual run (Actions -> Release -> Run workflow) only builds them and keeps them as downloadable artifacts.
+# main pushes and manual runs only build them and keep them as downloadable artifacts.
 name: Release
 
 on:
@@ -132,7 +132,11 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           name: Linnea ${{ github.ref_name }}
-          files: out/*
+          files: |
+            out/Linnea-Setup.exe
+            out/*.dmg
+            out/*.tar.gz
+          fail_on_unmatched_files: true
           generate_release_notes: true
           body: |
             **Windows 10 / 11**: download `Linnea-Setup.exe` and run it. It needs no administrator rights.
