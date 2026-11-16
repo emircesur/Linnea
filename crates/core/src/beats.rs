@@ -631,7 +631,7 @@ impl<'a> B<'a> {
                 self.doc.rect(11, t0, t1, &win, 30.0 * sc, "#17171D", 1.0, &format!("\\fscy90\\t(0,180,\\fscy100)\\fad(160,{tout})"), false);
                 self.doc.rect(11, t0, t1, &Rect { x0: win.x0, y0: win.y0 + 78.0 * sc, x1: win.x1, y1: win.y0 + 80.0 * sc }, 0.0, "#FFFFFF", 0.1, FADE, false);
                 let lts = self.doc.ts(&mono, 500, false, 28.0).color("#9A9AA5");
-                self.doc.text(12, t0, t1, Pos::At(win.x0 + 40.0 * sc, win.y0 + 40.0 * sc), 4, &lts, FADE, js(b, "label").or_else(|| js(b, "title")).unwrap_or("kesit"));
+                self.doc.text(12, t0, t1, Pos::At(win.x0 + 40.0 * sc, win.y0 + 40.0 * sc), 4, &lts, FADE, js(b, "label").or_else(|| js(b, "title")).unwrap_or("linnea"));
                 let mut y = win.y0 + 150.0 * sc;
                 if let Some(p) = js(&b["prompt"], "text") {
                     let pt = self.at(&b["prompt"], "at").unwrap_or(t0 + 0.3).max(t0);

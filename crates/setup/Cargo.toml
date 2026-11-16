@@ -1,11 +1,11 @@
 [package]
-name = "kesit-setup"
+name = "linnea-setup"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "Kesit-Setup"
+name = "Linnea-Setup"
 path = "src/main.rs"
 
 [dependencies]

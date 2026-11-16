@@ -1,4 +1,4 @@
-//! Kesit-Setup.exe: installs Linnea (Linnea Kesit in Turkish) for the current user (no admin rights), or removes it with --uninstall.
+//! Linnea-Setup.exe: installs Linnea (Linnea Kesit in Turkish) for the current user (no admin rights), or removes it with --uninstall.
 //! The program files ride inside this exe (dist/payload.zip, made by pack.py).
 #![windows_subsystem = "windows"]
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
@@ -8,7 +8,9 @@ use std::process::Command;
 
 static PAYLOAD: &[u8] = include_bytes!("../../../dist/payload.zip");
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-const UNINSTALL_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Kesit";
+const UNINSTALL_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Linnea";
+/// The app was called Kesit before: its program folder, uninstall entry, commands and MCP name are cleaned up.
+const OLD_UNINSTALL_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Kesit";
 
 fn quiet(cmd: &mut Command) -> &mut Command {
     #[cfg(windows)]
@@ -21,7 +23,7 @@ fn quiet(cmd: &mut Command) -> &mut Command {
 static SILENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 fn log(msg: &str) {
     use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(std::env::temp_dir().join("kesit-setup.log")) {
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(std::env::temp_dir().join("linnea-setup.log")) {
         let _ = writeln!(f, "{msg}");
     }
 }
@@ -57,7 +59,16 @@ fn tell(text: &str, error: bool) {
 
 /// The app's settings file (the same one the app reads).
 fn config_path() -> PathBuf {
-    std::env::var("KESIT_HOME").map(PathBuf::from).unwrap_or_else(|_| dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("Kesit")).join("config.json")
+    if let Ok(h) = std::env::var("LINNEA_HOME").or_else(|_| std::env::var("KESIT_HOME")) {
+        return PathBuf::from(h).join("config.json");
+    }
+    // the settings an earlier version kept in AppData\Kesit move with the app (as the app itself does)
+    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    let (old, new) = (base.join("Kesit"), base.join("Linnea"));
+    if !new.exists() && old.is_dir() && std::fs::rename(&old, &new).is_err() {
+        return old.join("config.json");
+    }
+    new.join("config.json")
 }
 fn read_config() -> serde_json::Value {
     std::fs::read_to_string(config_path()).ok().and_then(|s| serde_json::from_str(s.trim_start_matches('\u{feff}')).ok()).filter(|v: &serde_json::Value| v.is_object()).unwrap_or_else(|| serde_json::json!({}))
@@ -104,7 +115,23 @@ fn psq(s: &Path) -> String {
 }
 
 fn install_dir() -> PathBuf {
+    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("Programs").join("Linnea")
+}
+fn old_install_dir() -> PathBuf {
     dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("Programs").join("Kesit")
+}
+/// Take a bin folder off the user PATH.
+fn path_remove(bin: &Path) {
+    ps(&format!("$p=[Environment]::GetEnvironmentVariable('Path','User'); if ($p) {{ [Environment]::SetEnvironmentVariable('Path', (($p -split ';') | Where-Object {{ $_ -and $_ -ne '{}' }}) -join ';', 'User') }}", psq(bin)));
+}
+/// What an install under the old name left: its program files (never the user's work), PATH entry and uninstall entry.
+fn remove_old_install() {
+    let old = old_install_dir();
+    if old.is_dir() {
+        let _ = std::fs::remove_dir_all(&old);
+        path_remove(&old.join("bin"));
+    }
+    let _ = quiet(Command::new("reg").args(["delete", OLD_UNINSTALL_KEY, "/f"])).output();
 }
 fn start_menu_dir() -> Option<PathBuf> {
     dirs::data_dir().map(|d| d.join("Microsoft").join("Windows").join("Start Menu").join("Programs"))
@@ -114,7 +141,7 @@ fn shortcuts() -> Vec<PathBuf> {
     let name = format!("{}.lnk", brand());
     [start_menu_dir(), dirs::desktop_dir()].into_iter().flatten().map(|d| d.join(&name)).collect()
 }
-/// Every name a shortcut ever had (the app was called Kesit before), so none is left behind.
+/// Every name a shortcut ever had (the app was called Linnea before), so none is left behind.
 fn shortcuts_all() -> Vec<PathBuf> {
     let mut v = vec![];
     for d in [start_menu_dir(), dirs::desktop_dir()].into_iter().flatten() {
@@ -126,7 +153,7 @@ fn shortcuts_all() -> Vec<PathBuf> {
 }
 
 fn stop_running() {
-    for exe in ["kesit-app.exe", "kesit.exe"] {
+    for exe in ["linnea-app.exe", "linnea.exe", "kesit-app.exe", "kesit.exe"] {
         let _ = quiet(Command::new("taskkill").args(["/F", "/IM", exe])).output();
     }
     std::thread::sleep(std::time::Duration::from_millis(600));
@@ -174,7 +201,8 @@ fn install() -> Result<(), String> {
         return Ok(());
     }
     stop_running();
-    // Remove the old program files, keep nothing of the user's (their work lives in Videos\Kesit and AppData).
+    remove_old_install();
+    // Remove the old program files, keep nothing of the user's (their work lives in Videos\Linnea and AppData).
     for sub in ["bin", "library", "ui", "skill"] {
         let _ = std::fs::remove_dir_all(dir.join(sub));
     }
@@ -182,12 +210,12 @@ fn install() -> Result<(), String> {
     let mut zip = zip::ZipArchive::new(Cursor::new(PAYLOAD)).map_err(|e| format!("{}: {e}", l("the package could not be read", "paket okunamadı")))?;
     zip.extract(&dir).map_err(|e| format!("{}: {e}", l("the files could not be unpacked", "dosyalar açılamadı")))?;
     let me = std::env::current_exe().map_err(|e| e.to_string())?;
-    let setup = dir.join("Kesit-Setup.exe");
+    let setup = dir.join("Linnea-Setup.exe");
     if me != setup {
         let _ = std::fs::copy(&me, &setup);
     }
-    let app = dir.join("bin").join("kesit-app.exe");
-    let icon = dir.join("kesit.ico");
+    let app = dir.join("bin").join("linnea-app.exe");
+    let icon = dir.join("linnea.ico");
     for old in shortcuts_all() {
         let _ = std::fs::remove_file(old);
     }
@@ -212,7 +240,7 @@ fn install() -> Result<(), String> {
     reg("EstimatedSize", "REG_DWORD", &size_kb.to_string());
 
     let bin = dir.join("bin");
-    if ask("path", l("Terminal command", "Terminal komutu"), &if turkish() { format!("Terminalden `kesit` komutunu kullanabilmek için {b} bin klasörü kullanıcı PATH'ine eklensin mi?") } else { format!("Add the {b} bin folder to your user PATH so the `kesit` command works in a terminal?") }) {
+    if ask("path", l("Terminal command", "Terminal komutu"), &if turkish() { format!("Terminalden `linnea` komutunu kullanabilmek için {b} bin klasörü kullanıcı PATH'ine eklensin mi?") } else { format!("Add the {b} bin folder to your user PATH so the `linnea` command works in a terminal?") }) {
         ps(&format!(
             "$p=[Environment]::GetEnvironmentVariable('Path','User'); $b='{}'; if (-not (($p -split ';') -contains $b)) {{ [Environment]::SetEnvironmentVariable('Path', ($(if ($p) {{ $p.TrimEnd(';') + ';' }} else {{ '' }}) + $b), 'User') }}",
             psq(&bin)
@@ -221,13 +249,16 @@ fn install() -> Result<(), String> {
     let mut mcp = String::new();
     if let Some(claude) = find_claude() {
         if ask("claude", "Claude Code", &if turkish() { format!("Claude Code bu bilgisayarda bulundu. {b}, Claude Code'a MCP sunucusu olarak bağlansın ve skill'i kurulsun mu?\n\nBöylece Claude filmleri ve reels'leri {b} araçlarıyla yapar.") } else { format!("Claude Code is on this computer. Connect {b} to Claude Code as an MCP server and install its skill?\n\nClaude then makes films and reels with the {b} tools.") }) {
-            let kesit = bin.join("kesit.exe");
-            let _ = quiet(Command::new(&claude).args(["mcp", "remove", "kesit", "-s", "user"])).output();
-            let ok = quiet(Command::new(&claude).args(["mcp", "add", "--scope", "user", "kesit", "--"]).arg(&kesit).arg("mcp")).output().map(|o| o.status.success()).unwrap_or(false);
+            let linnea = bin.join("linnea.exe");
+            for name in ["linnea", "kesit"] {
+                let _ = quiet(Command::new(&claude).args(["mcp", "remove", name, "-s", "user"])).output();
+            }
+            let ok = quiet(Command::new(&claude).args(["mcp", "add", "--scope", "user", "linnea", "--"]).arg(&linnea).arg("mcp")).output().map(|o| o.status.success()).unwrap_or(false);
             if let Some(home) = dirs::home_dir() {
-                let sk = home.join(".claude").join("skills").join("kesit");
+                let _ = std::fs::remove_dir_all(home.join(".claude").join("skills").join("kesit"));
+                let sk = home.join(".claude").join("skills").join("linnea");
                 let _ = std::fs::create_dir_all(&sk);
-                let _ = std::fs::copy(dir.join("skill").join("kesit").join("SKILL.md"), sk.join("SKILL.md"));
+                let _ = std::fs::copy(dir.join("skill").join("linnea").join("SKILL.md"), sk.join("SKILL.md"));
             }
             mcp = if ok { l("\nConnected to Claude Code (it shows in a new Claude Code session).", "\nClaude Code'a bağlandı (yeni bir Claude Code oturumunda görünür).").into() } else { l("\nThe Claude Code connection could not be made; use the command in Settings.", "\nClaude Code bağlantısı kurulamadı; Ayarlar ekranındaki komutu kullanın.").into() };
         }
@@ -256,9 +287,9 @@ fn uninstall() -> Result<(), String> {
     TURKISH.store(read_config()["ui"]["lang"].as_str() == Some("tr"), std::sync::atomic::Ordering::Relaxed);
     let b = brand();
     let text = if turkish() {
-        format!("{b} bu bilgisayardan kaldırılsın mı?\n\nProgram dosyaları silinir: {}\nFilmleriniz, projeleriniz ve ayarlarınız (Videolar\\Kesit, AppData\\Kesit) yerinde kalır.", dir.display())
+        format!("{b} bu bilgisayardan kaldırılsın mı?\n\nProgram dosyaları silinir: {}\nFilmleriniz, projeleriniz ve ayarlarınız (Videolar\\Linnea, AppData\\Linnea) yerinde kalır.", dir.display())
     } else {
-        format!("Remove {b} from this computer?\n\nThe program files are deleted: {}\nYour films, projects and settings (Videos\\Kesit, AppData\\Kesit) stay where they are.", dir.display())
+        format!("Remove {b} from this computer?\n\nThe program files are deleted: {}\nYour films, projects and settings (Videos\\Linnea, AppData\\Linnea) stay where they are.", dir.display())
     };
     if !ask("uninstall", &format!("{} {b}", l("Remove", "Kaldır:")), &text) {
         return Ok(());
@@ -269,9 +300,11 @@ fn uninstall() -> Result<(), String> {
     }
     let _ = quiet(Command::new("reg").args(["delete", UNINSTALL_KEY, "/f"])).output();
     let bin = dir.join("bin");
-    ps(&format!("$p=[Environment]::GetEnvironmentVariable('Path','User'); if ($p) {{ [Environment]::SetEnvironmentVariable('Path', (($p -split ';') | Where-Object {{ $_ -and $_ -ne '{}' }}) -join ';', 'User') }}", psq(&bin)));
+    path_remove(&bin);
     if let Some(claude) = find_claude() {
-        let _ = quiet(Command::new(&claude).args(["mcp", "remove", "kesit", "-s", "user"])).output();
+        for name in ["linnea", "kesit"] {
+            let _ = quiet(Command::new(&claude).args(["mcp", "remove", name, "-s", "user"])).output();
+        }
     }
     // This exe lives in the folder it removes: let a short-lived shell finish the job after we exit.
     let _ = quiet(Command::new("cmd").args(["/C", &format!("ping 127.0.0.1 -n 3 > nul & rmdir /S /Q \"{}\"", dir.display())])).spawn();

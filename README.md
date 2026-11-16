@@ -4,8 +4,8 @@
 
 **Claude writes the video. You finish it by hand.**
 
-A local video suite for Windows: films written as code by Claude, edited with drag and drop,
-rendered on your own machine, and long recordings cut into vertical clips.
+A local video suite for Windows, macOS and Linux: films written as code by Claude, edited with drag and
+drop, rendered on your own machine, and long recordings cut into vertical clips.
 
 <img src="docs/images/02-edit-by-hand.png" alt="A film open in Linnea: a title selected on the frame, its position, size, colour and timing in the panel on the right, every element on the timeline" width="100%">
 
@@ -130,7 +130,7 @@ flowchart LR
     K -- "transcript, clips,<br/>9:16 reels" --> V
 ```
 
-The app, the terminal (`kesit <tool> key=value`) and agents (over MCP) drive the same set of tools, so
+The app, the terminal (`linnea <tool> key=value`) and agents (over MCP) drive the same set of tools, so
 whatever Claude does shows up in the open window, and whatever you do by hand is there for Claude to read.
 Everything runs on your computer. Nothing is sent anywhere unless you choose an API service for a task.
 
@@ -138,20 +138,30 @@ Everything runs on your computer. Nothing is sent anywhere unless you choose an 
 
 ## Install
 
-Linnea runs on Windows 10 and 11. Get `Kesit-Setup.exe` from the
-[Releases](https://github.com/emircesur/Linnea/releases) page, or build it yourself (below). The installer
-asks for your language, needs no administrator rights, and can connect itself to Claude Code.
+Download the latest version from the [Releases](https://github.com/emircesur/Linnea/releases) page.
 
-On first start, open **Settings → Tools → Download missing**: it fetches ffmpeg, yt-dlp, whisper.cpp and its
-model (about 2.5 GB).
+| System | Download | |
+|---|---|---|
+| **Windows 10 / 11** | `Linnea-Setup.exe` | Asks for your language, needs no administrator rights, and can connect itself to Claude Code. |
+| **macOS** (Apple silicon) | `Linnea-…-macos-arm64.dmg` | Drag Linnea to Applications. Not notarized yet: the first time, right-click it and choose **Open**. |
+| **macOS** (Intel) | `Linnea-…-macos-x64.dmg` | The same. |
+| **Linux** (x86-64) | `Linnea-…-linux-x64.tar.gz` | Unpack it and run `./install.sh`. Needs WebKitGTK 4.1 (`libwebkit2gtk-4.1-0`). |
+
+Windows is the main platform. On first start there, open **Settings → Tools → Download missing**: it
+fetches ffmpeg, yt-dlp, whisper.cpp and its model (about 2.5 GB). On macOS and Linux, install those tools
+with your package manager instead (for example `brew install ffmpeg yt-dlp whisper-cpp`); Linnea finds
+them on your `PATH`.
 
 ### Connect Claude Code
 
 ```bash
-claude mcp add kesit -- "%LOCALAPPDATA%\Programs\Kesit\bin\kesit.exe" mcp
+claude mcp add linnea -- "%LOCALAPPDATA%\Programs\Linnea\bin\linnea.exe" mcp
 ```
 
-Copy `skill/kesit` to `~/.claude/skills/kesit` so Claude knows the workflow. Then ask Claude Code to
+On macOS the command is inside the app: `/Applications/Linnea.app/Contents/MacOS/linnea`. On Linux,
+`install.sh` offers to connect it for you.
+
+Copy `skill/linnea` to `~/.claude/skills/linnea` so Claude knows the workflow. Then ask Claude Code to
 "make a film in Linnea" and watch it appear.
 
 For the built-in assistants (film assistant, puppet maker, translation), pick a model under
@@ -165,40 +175,49 @@ Requirements: Rust (stable), Node.js 18 or newer with pnpm, Python 3, and Micros
 
 ```bash
 cd ui && pnpm install && pnpm build && cd ..
-cargo build --release -p kesit-cli -p kesit-app
+cargo build --release -p linnea-cli -p linnea-app
 ```
 
 ```bash
 python pack.py
 ```
 
-`pack.py` builds the release binaries, packs them with the library and the interface, and writes the
-installer to `dist/Kesit-Setup.exe`. If the folder is deep, set `CARGO_TARGET_DIR` to a short path to stay
+On macOS and Linux, `bash packaging/macos.sh` and `bash packaging/linux.sh` turn the same release build
+into `Linnea.app` with a disk image, or a `.tar.gz` (Linux also needs `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`
+and `libxdo-dev` to build). Pushing a tag such as `v0.2.0` makes GitHub Actions build all three and publish
+them as a release (`.github/workflows/release.yml`).
+
+`pack.py` builds the Windows release binaries, packs them with the library and the interface, and writes the
+installer to `dist/Linnea-Setup.exe`. If the folder is deep, set `CARGO_TARGET_DIR` to a short path to stay
 under Windows' 260-character limit.
 
 | Run | Command |
 |---|---|
-| The app | `target/release/kesit-app.exe` |
-| Check the machine | `kesit doctor` |
-| List the tools | `kesit tools` |
-| Server only (browser at http://127.0.0.1:7790) | `kesit serve` |
-| MCP server | `kesit mcp` |
+| The app | `target/release/linnea-app.exe` |
+| Check the machine | `linnea doctor` |
+| List the tools | `linnea tools` |
+| Server only (browser at http://127.0.0.1:7790) | `linnea serve` |
+| MCP server | `linnea mcp` |
 
 ### Layout
 
 ```
 crates/core    the engine: import, transcription, analysis, styles, captions, films, puppets, render,
                jobs, the tool registry, MCP and the local server
-crates/cli     kesit: the terminal and the MCP server
+crates/cli     linnea: the terminal and the MCP server
 crates/app     the window (wry) around the same server
 crates/setup   the installer
 ui             the interface (Vite + React + TypeScript)
 library        styles, recipes, sounds, fonts, puppets, film templates
-skill/kesit    the skill that teaches agents the workflow
+skill/linnea   the skill that teaches agents the workflow
 ```
 
-Settings live in `%APPDATA%\Kesit\config.json`, tools and models in `%LOCALAPPDATA%\Kesit`, and your work in
-`Videos\Kesit`. The command and the MCP server keep the name `kesit`.
+Settings live in `%APPDATA%\Linnea\config.json`, tools and models in `%LOCALAPPDATA%\Linnea`, and your work in
+`Videos\Linnea`. The command and the MCP server are both called `linnea`.
+
+Coming from a version that was still called Kesit? Run the new installer: it removes the old program
+files, the `kesit` command and the `kesit` MCP entry, and moves your settings to the new folders. Your work
+stays where it is (`Videos\Kesit` keeps working), and old projects and films open as before.
 
 ---
 

@@ -1,7 +1,7 @@
 //! Films written as code, on VideoHub's project contract (docs/PROJECT-CONTRACT.md, MIT):
 //! a page with `window.renderOut(t)` + `window.READY`, `window.VH_SCENES`, `.videohub/` for notes, versions
 //! and settings, `render/chunks/c_NNN.mp4` chunks and `<base>_vN.mp4` versions. Claude writes the film,
-//! Kesit plays it live from its code, the user leaves notes on frames, Claude fixes them, and the user
+//! Linnea plays it live from its code, the user leaves notes on frames, Claude fixes them, and the user
 //! renders when ready (only the chunks that changed, if they like).
 use crate::cdp::Page;
 use crate::config::*;
@@ -494,7 +494,7 @@ pub fn render(cfg: &Config, f: &Film, a: &Value, rep: &Rep) -> Result<Value> {
     let nchunks = total.div_ceil(ch).max(1);
     let rdir = f.dir.join("render");
     let cdir = rdir.join(if preview { "preview_chunks" } else { "chunks" });
-    let man = json!({"fps": fps, "chunkFrames": ch, "chunkSec": ch as f64 / fps, "width": w, "height": h, "dur": dur, "family": "A", "renderer": "kesit"});
+    let man = json!({"fps": fps, "chunkFrames": ch, "chunkSec": ch as f64 / fps, "width": w, "height": h, "dur": dur, "family": "A", "renderer": "linnea"});
     let prev_v = versions(f).iter().filter_map(|x| x["v"].as_u64()).max().unwrap_or(0);
     let mut changed: Vec<usize> = vec![];
     std::fs::create_dir_all(&rdir)?;
@@ -552,7 +552,7 @@ pub fn render(cfg: &Config, f: &Film, a: &Value, rep: &Rep) -> Result<Value> {
         std::thread::sleep(Duration::from_secs(2));
         made = std::fs::create_dir_all(&cdir);
     }
-    made.with_context(|| format!("cannot create {} (is a video from it open in a player, or does Windows' controlled folder access block Kesit?)", cdir.display()))?;
+    made.with_context(|| format!("cannot create {} (is a video from it open in a player, or does Windows' controlled folder access block Linnea?)", cdir.display()))?;
     let todo: Vec<usize> = (0..nchunks).filter(|c| !cdir.join(format!("c_{c:03}.mp4")).exists()).collect();
     let todo_frames: usize = todo.iter().map(|c| (total - c * ch).min(ch)).sum();
     let workers = (jfd(a, "workers", cfg.get("render.workers").and_then(|v| v.as_f64()).unwrap_or(2.0)) as usize).clamp(1, 6).min(todo.len().max(1));
@@ -758,7 +758,7 @@ pub fn new_film(cfg: &Config, a: &Value) -> Result<Value> {
             let s = std::fs::read_to_string(&p)?.replace("__W__", &w.to_string()).replace("__H__", &h.to_string()).replace("__DUR__", &format!("{dur}")).replace("__FPS__", &format!("{fps}")).replace("__TITLE__", t);
             std::fs::write(&p, s)?;
         }
-        // the kesit2d.js hook reads tweaks.json; a missing one shows up as a load error in checks
+        // the linnea2d.js hook reads tweaks.json; a missing one shows up as a load error in checks
         write_json(&dir.join("tweaks.json"), &json!({}))?;
         let pj = json!({"title": title, "status": "in-progress", "live": {"page": "index.html", "fps": fps, "dur": dur, "width": w, "height": h}, "render": {"env": {"DUR": format!("{dur}")}}});
         write_json(&dir.join(".videohub").join("project.json"), &pj)?;
@@ -817,7 +817,7 @@ fn t_project(c: &Ctx, a: &Value) -> Result<Value> {
     Ok(i)
 }
 
-/// Check the page headless the way the renderer will see it, then show it in the Kesit window.
+/// Check the page headless the way the renderer will see it, then show it in the Linnea window.
 fn t_live(c: &Ctx, a: &Value) -> Result<Value> {
     let f = film(c, a)?;
     let mut i = info(&c.cfg, &f);
@@ -858,7 +858,7 @@ fn t_live(c: &Ctx, a: &Value) -> Result<Value> {
         let d = jfd(&i, "dur", 10.0);
         let _ = frames(&c.cfg, &f, &[d * 0.3], 0.5);
     }
-    write_json(&c.cfg.workspace().join(".kesit").join("focus.json"), &json!({"kind": "film", "project": f.id, "t": a["t"], "ts": now_ms(), "by": c.origin}))?;
+    write_json(&c.cfg.state().join("focus.json"), &json!({"kind": "film", "project": f.id, "t": a["t"], "ts": now_ms(), "by": c.origin}))?;
     let mut next = vec![];
     if !jb(&i, "dur_known").unwrap_or(false) {
         next.push(format!("the length is a guess ({} s): save it with hub_project set={{live:{{dur:N}}}}", jfd(&i, "dur", 0.0)));
@@ -866,7 +866,7 @@ fn t_live(c: &Ctx, a: &Value) -> Result<Value> {
     if checks["ready"] != json!(true) || !ja(&checks, "render_errors").is_empty() || !ja(&checks, "console_errors").is_empty() {
         next.push("fix the errors above, then call hub_live again".into());
     } else {
-        next.push("the user is watching it in Kesit now; stop here and wait for their notes (hub_notes)".into());
+        next.push("the user is watching it in Linnea now; stop here and wait for their notes (hub_notes)".into());
     }
     Ok(json!({"film": f.id, "info": i, "checks": checks, "next": next}))
 }
@@ -961,7 +961,7 @@ fn t_note_update(c: &Ctx, a: &Value) -> Result<Value> {
 
 fn t_render(c: &Ctx, a: &Value) -> Result<Value> {
     if c.origin == "agent" && c.cfg.get("render.agent").and_then(|v| v.as_bool()) != Some(true) {
-        bail!("rendering is the user's step: they press Render in Kesit when the film is ready. Tell them it is ready for review instead. (Settings render.agent=true lets agents render.)");
+        bail!("rendering is the user's step: they press Render in Linnea when the film is ready. Tell them it is ready for review instead. (Settings render.agent=true lets agents render.)");
     }
     let f = film(c, a)?;
     render(&c.cfg, &f, a, &c.rep)
@@ -1026,10 +1026,10 @@ fn film_path(f: &Film, rel: &str, write: bool) -> Result<PathBuf> {
     if write {
         let name = parts[parts.len() - 1];
         if parts.len() > 1 && skipped(parts[0]) && parts[0] != "puppets" {
-            bail!("{} holds Kesit's own data (notes, versions, renders); it is not written by hand", parts[0]);
+            bail!("{} holds Linnea's own data (notes, versions, renders); it is not written by hand", parts[0]);
         }
         match name {
-            "kesit2d.js" => bail!("kesit2d.js is Kesit's engine and is replaced on every update; put the change in film.js"),
+            "linnea2d.js" | "kesit2d.js" => bail!("linnea2d.js is Linnea's engine and is replaced on every update; put the change in film.js"),
             "tweaks.json" => bail!("tweaks.json holds the user's own edits and layers; change them with hub_2d"),
             "links.json" if parts.len() > 1 => bail!("puppets/links.json is kept by puppet_link and puppet_sync"),
             _ => {}
@@ -1208,7 +1208,7 @@ fn t_restore(c: &Ctx, a: &Value) -> Result<Value> {
 // ---------- the mouth follows the voice ----------
 
 /// audio/mouth.json: how open a talking puppet's mouth is, 30 times a second, from the film's voice (its
-/// voice stem when it has one, else the mix). kesit2d.js reads it for every puppet with a `mouth` param.
+/// voice stem when it has one, else the mix). linnea2d.js reads it for every puppet with a `mouth` param.
 pub fn lipsync(cfg: &Config, f: &Film) -> Result<Value> {
     let ff = need_tool(cfg, "ffmpeg")?;
     let info = info(cfg, f);
@@ -1251,7 +1251,7 @@ pub fn lipsync(cfg: &Config, f: &Film) -> Result<Value> {
         })
         .collect();
     let from = src.strip_prefix(&f.dir).map(fwd).unwrap_or_else(|_| fwd(&src));
-    // kesit2d.js asks for the file only when tweaks.json names it (then a film without one shows no error)
+    // linnea2d.js asks for the file only when tweaks.json names it (then a film without one shows no error)
     let tp = f.dir.join("tweaks.json");
     let mut tw = read_json_or(&tp, json!({}));
     tw["mouth"] = json!("audio/mouth.json");
@@ -1280,17 +1280,17 @@ pub const TOOLS: &[Tool] = &[
     Tool { name: "hub_workspace", desc: "Where this PC keeps its video work: the workspace, the films folder (make every new film there, one folder per film) and the outputs folder (finished renders; never write there).", params: &[], long: false, app_only: false, run: t_workspace },
     Tool { name: "hub_films", desc: "List the films: title, size, length, open notes, versions.", params: &[], long: false, app_only: false, run: t_films },
     Tool { name: "hub_new_film", desc: "Start a new film written as code from the template: index.html with a fixed-size canvas and film.js where window.renderOut(t) draws second t. Default 1080x1920, 30 fps, 10 s. example=hello-film copies VideoHub's example film instead.", params: &[("title!", "string", "Film title"), ("width", "number", "Width px"), ("height", "number", "Height px"), ("fps", "number", "Frames per second"), ("dur", "number", "Length in seconds"), ("example", "string", "hello-film")], long: false, app_only: false, run: t_new },
-    Tool { name: "hub_project", desc: "A film's contract as Kesit reads it (page, size, fps, length, sound, words, scenes, chunks), its versions and note counts. `set` merges into .videohub/project.json (title, status, live {page, fps, dur, width, height, audio}, render {env {DUR}, mux, workers}, transcript {file, offset}).", params: &[F, ("set", "object", "Keys to merge")], long: false, app_only: false, run: t_project },
-    Tool { name: "hub_live", desc: "Open the film in Kesit's live preview WITHOUT RENDERING: it plays from its code, the user watches and leaves notes, and the preview reloads itself when the code changes. First it loads the page headless and reports problems: READY never set, renderOut missing or throwing, console errors, the canvas size. Call it as soon as a new film (or a big change) plays, then stop and wait for the user's notes.", params: &[F, ("t", "number", "Second to show")], long: false, app_only: false, run: t_live },
+    Tool { name: "hub_project", desc: "A film's contract as Linnea reads it (page, size, fps, length, sound, words, scenes, chunks), its versions and note counts. `set` merges into .videohub/project.json (title, status, live {page, fps, dur, width, height, audio}, render {env {DUR}, mux, workers}, transcript {file, offset}).", params: &[F, ("set", "object", "Keys to merge")], long: false, app_only: false, run: t_project },
+    Tool { name: "hub_live", desc: "Open the film in Linnea's live preview WITHOUT RENDERING: it plays from its code, the user watches and leaves notes, and the preview reloads itself when the code changes. First it loads the page headless and reports problems: READY never set, renderOut missing or throwing, console errors, the canvas size. Call it as soon as a new film (or a big change) plays, then stop and wait for the user's notes.", params: &[F, ("t", "number", "Second to show")], long: false, app_only: false, run: t_live },
     Tool { name: "hub_frame", desc: "Exact frames of the film as JPEGs, drawn by its own renderOut: `t` one second, `times` a list, or `from`/`to`/`step` a range (with a contact sheet). Use it to look at your work before handing it over, and after every fix.", params: &[F, ("t", "number", "Second"), ("times", "array", "Seconds"), ("from", "number", "Range start"), ("to", "number", "Range end"), ("step", "number", "Seconds between frames"), ("scale", "number", "0.25..1, default 1")], long: false, app_only: false, run: t_frame },
-    Tool { name: "hub_notes", desc: "The notes the user left on frames in Kesit: time, frame, range, the chunks it touches, text, narration at that moment, and the pictures (images.crop = the drawing close up, images.annotated = the frame with the drawing, images.frame = the frame). Open the pictures with Read. Default: open notes (they are marked as with Claude).", params: &[F, ("status", "string", "open | fixed | done | all")], long: false, app_only: false, run: t_notes },
+    Tool { name: "hub_notes", desc: "The notes the user left on frames in Linnea: time, frame, range, the chunks it touches, text, narration at that moment, and the pictures (images.crop = the drawing close up, images.annotated = the frame with the drawing, images.frame = the frame). Open the pictures with Read. Default: open notes (they are marked as with Claude).", params: &[F, ("status", "string", "open | fixed | done | all")], long: false, app_only: false, run: t_notes },
     Tool { name: "hub_note_update", desc: "Save a note's status and a short reply the user sees. After fixing: status \"fixed\" + reply. Others: open, wontfix, done.", params: &[F, ("id!", "string", "Note id"), ("status", "string", "fixed | open | wontfix | done"), ("reply", "string", "Short reply"), ("delete", "boolean", "Remove the note")], long: false, app_only: false, run: t_note_update },
     Tool { name: "hub_note_add", desc: "Leave a note on a frame (the user does this in the app; an agent may record its own open question).", params: &[F, ("t!", "number", "Second"), ("t1", "number", "End of a range"), ("text!", "string", "What is wrong"), ("drawing", "string", "PNG data URL at video size"), ("box", "array", "[x0,y0,x1,y1] of the drawing"), ("video", "string", "A rendered version: take the frame from it")], long: false, app_only: false, run: t_note_add },
-    Tool { name: "hub_render", desc: "Render the film in Kesit's queue (one render at a time, low priority). mode full, partial (only the chunks the fixed notes, `seconds` or `chunks` touch; needs one full render first) or preview (half size). Renders are the USER's step in the app; an agent gets a refusal unless the user allowed it in settings.", params: &[F, ("mode", "string", "full | partial | preview"), ("notes", "array", "Note ids (partial)"), ("seconds", "array", "[[from, to], ...] (partial)"), ("chunks", "array", "Chunk numbers (partial)"), ("workers", "number", "Browser workers, default 2"), ("encoder", "string", "auto | nvenc | amf | qsv | x264"), ("scale", "number", "Size 0.25..1")], long: true, app_only: false, run: t_render },
+    Tool { name: "hub_render", desc: "Render the film in Linnea's queue (one render at a time, low priority). mode full, partial (only the chunks the fixed notes, `seconds` or `chunks` touch; needs one full render first) or preview (half size). Renders are the USER's step in the app; an agent gets a refusal unless the user allowed it in settings.", params: &[F, ("mode", "string", "full | partial | preview"), ("notes", "array", "Note ids (partial)"), ("seconds", "array", "[[from, to], ...] (partial)"), ("chunks", "array", "Chunk numbers (partial)"), ("workers", "number", "Browser workers, default 2"), ("encoder", "string", "auto | nvenc | amf | qsv | x264"), ("scale", "number", "Size 0.25..1")], long: true, app_only: false, run: t_render },
     Tool { name: "hub_job", desc: "The state of a render job. wait=true waits until it ends (at most ~9 min; call again if it has not). cancel=true stops it.", params: &[("id!", "string", "Job id"), ("wait", "boolean", "Wait"), ("cancel", "boolean", "Stop it")], long: false, app_only: false, run: t_job },
-    Tool { name: "hub_register_version", desc: "Register a video made outside Kesit's queue as this film's new version (with the seconds that changed).", params: &[F, ("file!", "string", "Video path"), ("changed", "array", "[[from, to], ...]"), ("kind", "string", "final | preview")], long: false, app_only: false, run: t_register },
+    Tool { name: "hub_register_version", desc: "Register a video made outside Linnea's queue as this film's new version (with the seconds that changed).", params: &[F, ("file!", "string", "Video path"), ("changed", "array", "[[from, to], ...]"), ("kind", "string", "final | preview")], long: false, app_only: false, run: t_register },
     Tool { name: "hub_versions", desc: "The film's rendered versions with the ranges each one changed.", params: &[F], long: false, app_only: false, run: t_versions },
-    Tool { name: "hub_file", desc: "The film's own code files, for the assistant inside the app: action list (the files), read (path; from / to line numbers for a part), write (path, content: the whole file) or replace (path, find: exact text that occurs once, with: its replacement; all=true for every occurrence). Paths stay inside the film folder; every overwrite keeps a backup under .videohub/backups. kesit2d.js and tweaks.json are not written here (hub_2d changes layers and edits).", params: &[F, ("action", "string", "list | read | write | replace"), ("path", "string", "File inside the film folder, e.g. film.js"), ("content", "string", "write: the whole new text"), ("find", "string", "replace: the exact text to find"), ("with", "string", "replace: the text that takes its place"), ("all", "boolean", "replace: every occurrence"), ("from", "number", "read: first line"), ("to", "number", "read: last line")], long: false, app_only: true, run: t_file },
+    Tool { name: "hub_file", desc: "The film's own code files, for the assistant inside the app: action list (the files), read (path; from / to line numbers for a part), write (path, content: the whole file) or replace (path, find: exact text that occurs once, with: its replacement; all=true for every occurrence). Paths stay inside the film folder; every overwrite keeps a backup under .videohub/backups. linnea2d.js and tweaks.json are not written here (hub_2d changes layers and edits).", params: &[F, ("action", "string", "list | read | write | replace"), ("path", "string", "File inside the film folder, e.g. film.js"), ("content", "string", "write: the whole new text"), ("find", "string", "replace: the exact text to find"), ("with", "string", "replace: the text that takes its place"), ("all", "boolean", "replace: every occurrence"), ("from", "number", "read: first line"), ("to", "number", "read: last line")], long: false, app_only: true, run: t_file },
     Tool { name: "hub_restore", desc: "Go back to how the film's files were at a moment: action diff shows every file changed since `since` (ms, as hub_ask returns it) before and after; action undo puts them back (undo is itself undoable).", params: &[F, ("since!", "number", "Moment in ms"), ("action", "string", "diff | undo")], long: false, app_only: true, run: t_restore },
     Tool { name: "hub_lipsync", desc: "Make audio/mouth.json from the film's voice (its voice stem, else audio/mix.wav): every puppet with a `mouth` param then opens its mouth with the sound, and KE.mouth(t) gives the same 0..1 in code. Run again after the sound changes.", params: &[F], long: false, app_only: false, run: t_lipsync },
     Tool { name: "hub_cleanup", desc: "List the files of this film that can safely go (old chunks, previews, captured frames). A list only: the user decides.", params: &[F], long: false, app_only: false, run: t_cleanup },

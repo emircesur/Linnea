@@ -15,7 +15,7 @@ use tungstenite::{Message, WebSocket};
 
 pub fn find_browser(cfg: &Config) -> Option<PathBuf> {
     let o = cfg.str("tools.browser");
-    let env = std::env::var("VIDEOHUB_BROWSER").or_else(|_| std::env::var("KESIT_BROWSER")).unwrap_or_default();
+    let env = std::env::var("VIDEOHUB_BROWSER").or_else(|_| std::env::var("LINNEA_BROWSER")).unwrap_or_default();
     for c in [o, env] {
         if !c.is_empty() && std::path::Path::new(&c).is_file() {
             return Some(c.into());

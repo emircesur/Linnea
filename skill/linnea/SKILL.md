@@ -1,9 +1,9 @@
 ---
-name: kesit
-description: "Make videos written as code (motion graphics, explainers, reels, any frame you can draw) and edit footage into vertical reels with Kesit, a local Rust editor, through its MCP tools (or `kesit <tool> key=value` in a terminal). Use when the user hands over a talking-head recording, a long video or a link and says \"edit this\", \"make a reel\", \"cut clips from this\", \"add captions\", \"remove the pauses\", \"pick the best takes\", names a style (clean, editorial, meme, cinematic, launch, kinetic, pop, or a recipe such as Clean OS, RESULT, Caption News, Swiss Grid), or left review notes in the Kesit window."
+name: linnea
+description: "Make videos written as code (motion graphics, explainers, reels, any frame you can draw) and edit footage into vertical reels with Linnea, a local Rust editor, through its MCP tools (or `linnea <tool> key=value` in a terminal). Use when the user hands over a talking-head recording, a long video or a link and says \"edit this\", \"make a reel\", \"cut clips from this\", \"add captions\", \"remove the pauses\", \"pick the best takes\", names a style (clean, editorial, meme, cinematic, launch, kinetic, pop, or a recipe such as Clean OS, RESULT, Caption News, Swiss Grid), or left review notes in the Linnea window."
 ---
 
-# Kesit
+# Linnea
 
 One recording in, one reel out. The creative work is choosing takes and planning beats; the tools do the
 rest the same way every time: cut math, 9:16 framing on the face, captions, sound levels, the render check.
@@ -24,7 +24,7 @@ second `t`. Every second of the picture is code you control: graphics, type, cha
 hub_new_film title=... width=1080 height=1920 dur=20   the folder, from the template
   edit film.js (Write/Edit)                            renderOut(t) a pure function of t; READY; VH_SCENES
   audio/mix.wav                                        the sound (optional); the preview plays it
-hub_live film=<id>      loads it headless: READY, renderOut errors, console errors; then shows it in Kesit
+hub_live film=<id>      loads it headless: READY, renderOut errors, console errors; then shows it in Linnea
 hub_frame film=<id> t=4.2 | from=2 to=6                look at your own frames (Read the jpg) before handing over
 STOP: the user watches live and leaves notes on frames
 hub_notes film=<id>     read images.crop, then images.annotated; t, t1, frame, chunks, narration
@@ -45,12 +45,12 @@ fix film.js -> hub_frame the same t -> hub_note_update id=... status=fixed reply
   the mix), levels in dB, mute, solo, removeMusic, ducking ranges, clips on the timeline (copied into
   vhaudio/). Apply rebuilds audio/mix.wav; the original stays as mix.vhorig.wav.
 - `hub_2d`: 2D layers over the film (`items2d`: text, image, rect with a time range, px position and size,
-  colours, fade). The kesit2d.js hook (in the template; `install=true` adds it) draws them after renderOut
+  colours, fade). The linnea2d.js hook (in the template; `install=true` adds it) draws them after renderOut
   in the preview and in renders. Good for titles, labels and stickers the user wants to move by hand.
-- Editable elements (KE, also in kesit2d.js): draw EVERY on-screen element of a film (titles, captions,
+- Editable elements (KE, also in linnea2d.js): draw EVERY on-screen element of a film (titles, captions,
   cards, frames, characters, objects) through the template's `el(id, t, {label, x, y, t0, t1, text, color}, (p, tt) => ...)`
   or `KE.text(g, id, t, {text, x, y, size, color, bg, ...})`, with a stable id, reading p.text / p.color
-  instead of literals. The user then clicks the element in Kesit and moves, resizes, turns, re-types,
+  instead of literals. The user then clicks the element in Linnea and moves, resizes, turns, re-types,
   recolours, hides, retimes or keyframes it; edits live in tweaks.json `edits` (`hub_2d` returns and takes
   them) and never touch film.js. Keep those edits when you rewrite the code: same ids, same pivots.
   Plain fillText still works (id `txt:<text>`) but moves only the letters, not the box behind them.
@@ -70,7 +70,7 @@ fix film.js -> hub_frame the same t -> hub_note_update id=... status=fixed reply
     the user can place, recolour and re-time by hand (Layers > Kukla kütüphanesi) and you can reuse anywhere.
   - `puppet_save film=… name=…` alone promotes the film's edited copy back to the library (version +1);
     `puppet_sync film=…` brings library updates into a film, keeping copies the film changed.
-    `puppet_get as=js` gives it as an ES module for work outside Kesit; `puppet_get film=… name=…` returns the
+    `puppet_get as=js` gives it as an ES module for work outside Linnea; `puppet_get film=… name=…` returns the
     film's own copy. `puppet_save name=new from=old` starts a variant as a copy. Params also take
     `{type: 'select', options: [...]}`; `pivot: [x, y]` is the point KE.puppet's x, y place (default the centre).
     Talking characters: give the puppet `mouth` and `blink` number params (0..1); after `hub_lipsync film=…` the mouth
@@ -79,7 +79,7 @@ fix film.js -> hub_frame the same t -> hub_note_update id=... status=fixed reply
     items2d `path: [[x, y], ...]` (centre points), `pathTurn`, `pathEase`.
 - Thumbnail Studio: `hub_thumbs`, `hub_thumb_new` (from a template), `hub_thumb_brief` (layers in words,
   positions, a prompt draft, layout.png), make the images, `hub_thumb_variant` each one, read
-  `hub_thumb` notes for changes. Never put the title text in the image; the user adds it in Kesit.
+  `hub_thumb` notes for changes. Never put the title text in the image; the user adds it in Linnea.
 
 ## Footage reels: pipeline
 
@@ -97,7 +97,7 @@ style_apply style=<id> captions=<template>
 beat_add / reel_set         plan the beats (below); every call returns warnings
 build                       timeline, every caption with its placement, the sound table, warnings
 snapshot t=<edit seconds>   one exact frame: LOOK at it (Read the file) before saying it is done
-open                        show the reel in the Kesit window; the user watches and leaves notes
+open                        show the reel in the Linnea window; the user watches and leaves notes
 notes -> fix -> note_update status=fixed reply="..."
 render mode=preview         then WAIT for the user's OK
 render mode=final           only when the user says so; read the `qa` verdict and fix a FAIL

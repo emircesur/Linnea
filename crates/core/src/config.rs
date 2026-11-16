@@ -4,21 +4,33 @@ use anyhow::Result;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
-pub fn config_dir() -> PathBuf {
-    if let Ok(h) = std::env::var("KESIT_HOME") {
-        return PathBuf::from(h);
+/// A folder that was called Kesit before the rename: moved to its Linnea name once, or kept where it is when
+/// the move is not possible (a file in use), so nothing the user made is left behind.
+pub fn renamed(base: &Path, old: &str, new: &str) -> PathBuf {
+    let (o, n) = (base.join(old), base.join(new));
+    if !n.exists() && o.is_dir() && std::fs::rename(&o, &n).is_err() {
+        return o;
     }
-    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("Kesit")
+    n
+}
+fn home_env() -> Option<PathBuf> {
+    std::env::var("LINNEA_HOME").or_else(|_| std::env::var("KESIT_HOME")).ok().map(PathBuf::from)
+}
+pub fn config_dir() -> PathBuf {
+    home_env().unwrap_or_else(|| renamed(&dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")), "Kesit", "Linnea"))
 }
 pub fn data_dir() -> PathBuf {
-    if let Ok(h) = std::env::var("KESIT_HOME") {
-        return PathBuf::from(h);
-    }
-    dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")).join("Kesit")
+    home_env().unwrap_or_else(|| renamed(&dirs::data_local_dir().unwrap_or_else(|| PathBuf::from(".")), "Kesit", "Linnea"))
+}
+/// Linnea's own state inside a folder (the workspace or a project): `.linnea`, formerly `.kesit`.
+pub fn state_dir(d: &Path) -> PathBuf {
+    renamed(d, ".kesit", ".linnea")
 }
 
 fn defaults() -> Value {
-    let ws = dirs::video_dir().or_else(dirs::home_dir).unwrap_or_else(|| PathBuf::from(".")).join("Kesit");
+    let videos = dirs::video_dir().or_else(dirs::home_dir).unwrap_or_else(|| PathBuf::from("."));
+    // the user's films stay where an earlier version put them (Videos\Kesit); they are never moved
+    let ws = if !videos.join("Linnea").exists() && videos.join("Kesit").is_dir() { videos.join("Kesit") } else { videos.join("Linnea") };
     json!({
         "workspace": fwd(&ws),
         "port": 7790,
@@ -58,6 +70,10 @@ impl Config {
     }
     pub fn workspace(&self) -> PathBuf {
         PathBuf::from(self.str("workspace"))
+    }
+    /// The workspace's own state folder (jobs, focus, activity).
+    pub fn state(&self) -> PathBuf {
+        state_dir(&self.workspace())
     }
     /// An API key from settings, else from the usual environment variable.
     pub fn key(&self, name: &str) -> Option<String> {
@@ -135,13 +151,13 @@ fn search_dir(dir: &Path, names: &[String], depth: u32) -> Option<PathBuf> {
 
 pub fn tools_dirs() -> Vec<PathBuf> {
     let mut v = vec![data_dir().join("tools")];
-    if let Some(p) = find_resource("KESIT_TOOLS", "tools", ".") {
+    if let Some(p) = find_resource("LINNEA_TOOLS", "tools", ".") {
         v.push(p);
     }
     v
 }
 
-/// Settings override, Kesit's own tools folders, then PATH.
+/// Settings override, Linnea's own tools folders, then PATH.
 pub fn find_tool(cfg: &Config, tool: &str) -> Option<PathBuf> {
     let o = cfg.str(&format!("tools.{tool}"));
     if !o.is_empty() && Path::new(&o).is_file() {

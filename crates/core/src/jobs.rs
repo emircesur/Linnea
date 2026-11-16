@@ -26,7 +26,7 @@ fn jobs() -> &'static Jobs {
 }
 
 fn dir() -> PathBuf {
-    Config::load().workspace().join(".kesit").join("jobs")
+    Config::load().state().join("jobs")
 }
 
 fn update(id: &str, f: impl FnOnce(&mut Value)) {
@@ -52,7 +52,7 @@ pub fn spawn(kind: &str, project: &str, f: impl FnOnce(&Rep) -> Result<Value> + 
             update(&jid, |s| s["status"] = json!("cancelled"));
             return;
         }
-        // One render at a time on this computer, also across Kesit windows, the terminal and agents.
+        // One render at a time on this computer, also across Linnea windows, the terminal and agents.
         let renders = ["render", "hub_render", "render_batch", "heygen_translate"].contains(&kind_s.as_str());
         let lock = dir().parent().map(|d| d.join("render.lock"));
         if renders {
@@ -183,15 +183,25 @@ pub fn wait(id: &str, secs: u64) -> Option<Value> {
     }
 }
 
-/// A Windows notification, when Kesit or another program is in front.
+/// A system notification, when Linnea or another program is in front.
 fn notify(title: &str, text: &str) {
     #[cfg(windows)]
     {
         let esc = |s: &str| s.replace('\'', "''").replace('<', " ").replace('>', " ").replace('&', "+");
         let script = format!(
-            "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; $x = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); $t = $x.GetElementsByTagName('text'); $t.Item(0).AppendChild($x.CreateTextNode('{}')) > $null; $t.Item(1).AppendChild($x.CreateTextNode('{}')) > $null; [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Kesit').Show([Windows.UI.Notifications.ToastNotification]::new($x))",
+            "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; $x = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); $t = $x.GetElementsByTagName('text'); $t.Item(0).AppendChild($x.CreateTextNode('{}')) > $null; $t.Item(1).AppendChild($x.CreateTextNode('{}')) > $null; [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Linnea').Show([Windows.UI.Notifications.ToastNotification]::new($x))",
             esc(title), esc(text)
         );
         let _ = crate::proc::cmd(std::path::Path::new("powershell.exe")).args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script]).spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let q = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = format!("display notification \"{}\" with title \"{}\"", q(text), q(title));
+        let _ = std::process::Command::new("osascript").args(["-e", &script]).spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = std::process::Command::new("notify-send").args(["-a", "Linnea", title, text]).spawn();
     }
 }

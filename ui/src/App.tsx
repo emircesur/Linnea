@@ -368,7 +368,7 @@ function Settings({ doctor, settings, say }: { doctor: ReturnType<typeof useLoad
     }
   };
   const [keys, setKeys] = useState<Record<string, string>>({});
-  const exe = (info.data?.exe || "").replace(/\//g, "\\") + "\\kesit.exe";
+  const exe = (info.data?.exe || "").replace(/\//g, "\\") + "\\linnea.exe";
   const names: Record<string, string> = { ffmpeg: "ffmpeg", ffprobe: "ffprobe", "yt-dlp": "yt-dlp", whisper: "whisper.cpp" };
   const themes: [string, string, string, string][] = [["grafit", tx("Graphite"), "#18181a", "#0e0e10"], ["gece", tx("Night"), "#141820", "#0b0e13"], ["kagit", tx("Paper"), "#ffffff", "#f2f1ee"]];
   if (!d || !s) return <div className="page"><div className="muted">{tx("Loading")}</div></div>;
@@ -478,10 +478,10 @@ function Settings({ doctor, settings, say }: { doctor: ReturnType<typeof useLoad
         <section>
           <h2>{tx("Agent connection")}</h2>
           <p className="sec" style={{ marginBottom: 12 }}>{tx("Claude Code and other MCP clients use Linnea with the same tools. Every change an agent makes shows up in the open project at once.")}</p>
-          <div className="code">{`claude mcp add kesit -- "${exe}" mcp`}</div>
+          <div className="code">{`claude mcp add linnea -- "${exe}" mcp`}</div>
           <div className="rowx" style={{ marginTop: 8 }}>
-            <button className="btn sm" onClick={() => navigator.clipboard.writeText(`claude mcp add kesit -- "${exe}" mcp`).then(() => say(tx("Command copied")))}>{tx("Copy command")}</button>
-            <span className="muted" style={{ fontSize: 12 }}>{tx("The same tools in a terminal: kesit tools")}</span>
+            <button className="btn sm" onClick={() => navigator.clipboard.writeText(`claude mcp add linnea -- "${exe}" mcp`).then(() => say(tx("Command copied")))}>{tx("Copy command")}</button>
+            <span className="muted" style={{ fontSize: 12 }}>{tx("The same tools in a terminal: linnea tools")}</span>
           </div>
         </section>
         <section>

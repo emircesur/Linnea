@@ -1,9 +1,9 @@
-// __TITLE__ — a film written as code (Kesit / VideoHub contract).
+// __TITLE__ — a film written as code (Linnea / VideoHub contract).
 //
 //   window.renderOut(t)  draws second t on the fixed-size canvas #c (__W__x__H__). It may return a promise
-//                        (for example to seek a <video>); Kesit waits for it, in the preview and in renders.
+//                        (for example to seek a <video>); Linnea waits for it, in the preview and in renders.
 //   window.READY = true  once every asset is loaded (images, fonts, videos).
-//   window.VH_SCENES     [{name, t0, t1}] — shown on Kesit's timeline, and in every note.
+//   window.VH_SCENES     [{name, t0, t1}] — shown on Linnea's timeline, and in every note.
 //   audio/mix.wav        the film's sound; the preview plays it and renders mux it.
 //
 // Golden rule: the picture is a pure function of t. No Date.now(), no state carried from frame to frame,
@@ -30,8 +30,8 @@
     g.save(); g.globalAlpha = alpha; g.fillStyle = color; g.beginPath(); g.roundRect(x, y, w, h, r); g.fill(); g.restore();
   }
   // Editable elements. Draw every title, card, character and object through el(): the user can then click it
-  // in Kesit and move, resize, turn, re-type, recolour, hide or retime it without touching this code
-  // (kesit2d.js, KE). def = {label, x, y (pivot), t0, t1, text, ...}; draw(p, tt) reads p (def + the
+  // in Linnea and move, resize, turn, re-type, recolour, hide or retime it without touching this code
+  // (linnea2d.js, KE). def = {label, x, y (pivot), t0, t1, text, ...}; draw(p, tt) reads p (def + the
   // user's edits, so p.text / p.color are what the user typed) and animates with tt.
   const el = (id, t, def, draw) => window.KE ? window.KE.group(g, id, t, def, draw)
     : (t >= (def.t0 ?? -Infinity) && t < (def.t1 ?? Infinity) ? draw(def, t) : undefined);
@@ -39,7 +39,7 @@
   //   window.KE.puppet(g, 'pencil-1', t, { use: 'pencil', x: W / 2, y: H / 2, scale: 1, t0: 1, t1: 6,
   //                                        params: { body: '#f2c14e' }, states: [{ state: 'write', t0: 1.5 }] });
   // x, y is where its centre goes; state times count from the puppet's own t0. The user can move it, change
-  // its params and re-time its states in Kesit like any other element.
+  // its params and re-time its states in Linnea like any other element.
   // Pictures and footage: load before READY. A <video> is seeked to the exact time each frame.
   const loadImage = src => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('cannot load ' + src)); i.src = src; });
   const loadVideo = src => new Promise((ok, no) => { const v = document.createElement('video'); v.muted = true; v.preload = 'auto'; v.src = src;

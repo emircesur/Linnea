@@ -14,7 +14,7 @@ fn manifest() -> &'static Value {
     M.get_or_init(|| read_json_or(&library_dir().join("sfx").join("manifest.json"), json!({})))
 }
 
-/// (lavfi source, extra audio filter, role) for the sounds Kesit makes itself.
+/// (lavfi source, extra audio filter, role) for the sounds Linnea makes itself.
 fn synth(id: &str) -> Option<(&'static str, &'static str, &'static str)> {
     Some(match id {
         "pop-1" => ("aevalsrc=0.8*sin(2*PI*(430+700*exp(-t*36))*t)*exp(-t*34):d=0.14:s=48000", "afade=t=out:st=0.1:d=0.04", "ui"),

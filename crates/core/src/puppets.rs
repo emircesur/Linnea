@@ -4,7 +4,7 @@
 //! may change (colour, label, length...) and a pure JS function `function (g, p, t, s, u)` that paints it in
 //! its own box (0..size). A `.rppet` (rich puppet) adds `states`: named animations with a length and loop
 //! flag (`idle`, `write`...); the function reads `s = {name, t, k, dur}` to know which one is playing and
-//! how far. kesit2d.js draws them in films (KE.puppet in code, or a `puppet` layer placed by hand).
+//! how far. linnea2d.js draws them in films (KE.puppet in code, or a `puppet` layer placed by hand).
 //!
 //! The library is `<workspace>/puppets` (yours) over `library/puppets` (shipped samples). Linking copies the
 //! file into the film's `puppets/` folder (so a film renders on its own) and records where it came from in
@@ -125,10 +125,10 @@ fn t_get(c: &Ctx, a: &Value) -> Result<Value> {
     let Some((f, w)) = local.or_else(|| find(c, &name)) else { bail!("no puppet named {name}; puppet_list shows them") };
     let v = read_json(&f)?;
     if jsd(a, "as", "json") == "js" {
-        // the same puppet as a plain ES module, for using it outside Kesit
+        // the same puppet as a plain ES module, for using it outside Linnea
         let mut meta = v.clone();
         let draw = meta.as_object_mut().and_then(|o| o.remove("draw")).and_then(|d| d.as_str().map(String::from)).unwrap_or_else(|| "function () {}".into());
-        let js = format!("// {name}: a Kesit puppet. draw(g, p, t, s, u) paints it in a {} box.\nexport const meta = {};\nexport const draw = {draw};\nexport default {{ ...meta, draw }};\n", v["size"], serde_json::to_string_pretty(&meta)?);
+        let js = format!("// {name}: a Linnea puppet. draw(g, p, t, s, u) paints it in a {} box.\nexport const meta = {};\nexport const draw = {draw};\nexport default {{ ...meta, draw }};\n", v["size"], serde_json::to_string_pretty(&meta)?);
         return Ok(json!({"name": name, "file": fwd(&f), "where": w, "js": js}));
     }
     Ok(json!({"name": name, "file": fwd(&f), "where": w, "puppet": v}))
@@ -195,7 +195,7 @@ fn t_save(c: &Ctx, a: &Value) -> Result<Value> {
     }
     let rich = v["states"].as_object().map(|o| !o.is_empty()).unwrap_or(false);
     let ext = if rich { "rppet" } else { "ppet" };
-    v["kesit"] = json!(format!("{ext}/1"));
+    v["linnea"] = json!(format!("{ext}/1"));
     v["version"] = json!(v["version"].as_u64().unwrap_or(0) + 1);
     v["updated"] = json!(now_ms());
     if v["label"].is_null() {
@@ -394,11 +394,11 @@ fn t_try(c: &Ctx, a: &Value) -> Result<Value> {
               "note": "rows are the states, columns four moments through each state; the dashed blue box is the puppet's box (size). Look at the picture, fix what is wrong, try again."}))
 }
 
-const MAKER: &str = "You make puppets for Kesit's puppet library: reusable drawings painted by a JavaScript function on a canvas, used in films written as code.\n\
+const MAKER: &str = "You make puppets for Linnea's puppet library: reusable drawings painted by a JavaScript function on a canvas, used in films written as code.\n\
 A puppet: size [w, h] (its box in px; draw inside 0..w, 0..h with a small margin), params {key: {type: color|number|text|bool|select, default, min, max, step, options, label}} for what a person would change (colours, text, lengths, on/off), states {name: {dur (seconds), loop (bool), label}} for its motions (optional; with states it is a rich puppet), initial (a state name), and draw: the source of `function (g, p, t, s, u) { ... }`.\n\
 draw: g is a CanvasRenderingContext2D already placed at the box's top-left. p holds the params' values. t is seconds since the puppet appeared. s = {name, t (seconds into the state), k (0..1 through it; loops wrap), dur}. u = {ease: {linear, in, out, inOut, back}, clamp(x, a, b), rand(n) (seeded, 0..1), img (pictures from assets), W, H (the box size)}.\n\
 Rules: a pure function of t and s: no Date.now, no Math.random, nothing kept between calls. Canvas 2D only: no DOM, no fetch, no timers. save()/restore() around everything you change. Use u.W and u.H rather than fixed numbers. Draw with clear silhouettes, a consistent flat style and good contrast on both light and dark backgrounds. Moving parts (head, arms, lids, steam, wheels) go in their own save/translate/rotate/restore block around their joint, so states can turn them; ease motions with u.ease. Param labels in the person's language.\n\
-A character that talks or blinks: give it params mouth {type: number, default: 0, min: 0, max: 1, label} and blink {type: number, default: 0, min: 0, max: 1, label}. Kesit drives them from the film's voice and a natural blink rhythm, so open the mouth by p.mouth and close the eyes by p.blink.\n\
+A character that talks or blinks: give it params mouth {type: number, default: 0, min: 0, max: 1, label} and blink {type: number, default: 0, min: 0, max: 1, label}. Linnea drives them from the film's voice and a natural blink rhythm, so open the mouth by p.mouth and close the eyes by p.blink.\n\
 Work: write it, call puppet_try (it draws every state at four moments and returns the picture and any errors), look at the picture critically (proportions, cut-off parts, motion between columns, errors), fix and try again until it is good, usually two to four tries; then puppet_save with a short lowercase name (letters, digits, -), a label in the person's language and a one-line desc in English. When changing an existing puppet, pass its name to puppet_try so its pictures come along, and save it under the same name without `assets`.\n\
 Answer in the person's language, briefly: what you made, its states and its params.";
 
@@ -537,7 +537,7 @@ pub const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "puppet_get",
-        desc: "One puppet in full: its draw function source, size, params, states and assets. With film (or project+reel) it returns that film's own copy when it has one (where = film), else the library's. as=js returns it as a plain ES module to reuse outside Kesit.",
+        desc: "One puppet in full: its draw function source, size, params, states and assets. With film (or project+reel) it returns that film's own copy when it has one (where = film), else the library's. as=js returns it as a plain ES module to reuse outside Linnea.",
         params: &[("name!", "string", "Puppet name"), ("as", "string", "json (default) or js"), COMMON, ("project", "string", "Project"), ("reel", "string", "Reel id")],
         long: false,
         app_only: false,

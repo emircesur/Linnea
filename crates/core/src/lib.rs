@@ -1,4 +1,4 @@
-//! Kesit core: a local reel editor that a person and an agent drive with the same tools.
+//! Linnea core: a local reel editor that a person and an agent drive with the same tools.
 pub mod ai;
 pub mod analyze;
 pub mod ass;

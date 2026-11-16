@@ -31,28 +31,43 @@ pub struct Project {
     pub manifest: Value,
 }
 
+const MANIFEST: &str = "linnea.json";
+const OLD_MANIFEST: &str = "kesit.json";
+
+/// A project's manifest: linnea.json, or kesit.json in a project made before the rename.
+fn manifest_path(d: &Path) -> PathBuf {
+    let n = d.join(MANIFEST);
+    if !n.exists() && d.join(OLD_MANIFEST).exists() {
+        return d.join(OLD_MANIFEST);
+    }
+    n
+}
+fn has_manifest(d: &Path) -> bool {
+    manifest_path(d).exists()
+}
+
 impl Project {
     pub fn open(cfg: &Config, key: &str) -> Result<Project> {
         if key.is_empty() {
             bail!("no project given. `projects` lists them.");
         }
         let as_path = Path::new(key);
-        let dir = if as_path.is_absolute() && as_path.join("kesit.json").exists() {
+        let dir = if as_path.is_absolute() && has_manifest(as_path) {
             as_path.to_path_buf()
         } else {
             let d = cfg.workspace().join(key);
-            if d.join("kesit.json").exists() {
+            if has_manifest(&d) {
                 d
             } else {
                 // by title or id prefix
                 let hit = Self::dirs(cfg).into_iter().find(|d| {
-                    let m = read_json_or(&d.join("kesit.json"), json!({}));
+                    let m = read_json_or(&manifest_path(d), json!({}));
                     jsd(&m, "title", "").eq_ignore_ascii_case(key) || jsd(&m, "id", "").starts_with(key)
                 });
                 hit.ok_or_else(|| anyhow!("project '{key}' not found in {}. `projects` lists them.", cfg.workspace().display()))?
             }
         };
-        let manifest = read_json(&dir.join("kesit.json"))?;
+        let manifest = read_json(&manifest_path(&dir))?;
         Ok(Project { dir, manifest })
     }
 
@@ -60,7 +75,7 @@ impl Project {
         let mut v = vec![];
         if let Ok(rd) = std::fs::read_dir(cfg.workspace()) {
             for e in rd.flatten() {
-                if e.path().join("kesit.json").exists() {
+                if has_manifest(&e.path()) {
                     v.push(e.path());
                 }
             }
@@ -92,7 +107,7 @@ impl Project {
         let mut v: Vec<Value> = Self::dirs(cfg)
             .into_iter()
             .filter_map(|d| {
-                let m = read_json(&d.join("kesit.json")).ok()?;
+                let m = read_json(&manifest_path(&d)).ok()?;
                 let p = Project { dir: d, manifest: m };
                 Some(p.summary())
             })
@@ -111,7 +126,10 @@ impl Project {
         self.dir.join(rel)
     }
     pub fn save_manifest(&self) -> Result<()> {
-        write_json(&self.dir.join("kesit.json"), &self.manifest)
+        write_json(&self.dir.join(MANIFEST), &self.manifest)?;
+        // a project from before the rename carries kesit.json: the new file replaces it
+        let _ = std::fs::remove_file(self.dir.join(OLD_MANIFEST));
+        Ok(())
     }
     pub fn set(&mut self, k: &str, v: Value) -> Result<()> {
         self.manifest[k] = v;
@@ -235,7 +253,7 @@ pub fn default_reel(title: &str) -> Value {
 // ---- activity log: what every tool call did, from the app, the terminal or an agent ----
 
 fn activity_path(cfg: &Config) -> PathBuf {
-    cfg.workspace().join(".kesit").join("activity.jsonl")
+    cfg.state().join("activity.jsonl")
 }
 
 pub fn log_activity(cfg: &Config, origin: &str, tool: &str, project: &str, ok: bool, summary: &str) {

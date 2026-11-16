@@ -1,4 +1,4 @@
-"""Build Kesit-Setup.exe: release binaries -> dist/payload.zip -> the installer that carries it.
+"""Build Linnea-Setup.exe: release binaries -> dist/payload.zip -> the installer that carries it.
 
     python pack.py                 (set CARGO_TARGET_DIR to a short path if this folder is deep)
 
@@ -22,12 +22,12 @@ def cargo(*args):
 def main():
     if not os.path.isfile(os.path.join(ROOT, "ui", "dist", "index.html")):
         sys.exit("build the interface first: cd ui && pnpm install && pnpm build")
-    cargo("build", "--release", "-p", "kesit-cli", "-p", "kesit-app")
+    cargo("build", "--release", "-p", "linnea-cli", "-p", "linnea-app")
     os.makedirs(DIST, exist_ok=True)
     payload = os.path.join(DIST, "payload.zip")
     skip_dirs = {"__pycache__", "node_modules", ".git"}
     with zipfile.ZipFile(payload, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
-        for exe in ("kesit.exe", "kesit-app.exe", "DirectML.dll"):
+        for exe in ("linnea.exe", "linnea-app.exe", "DirectML.dll"):
             built = os.path.join(TARGET, "release", exe)
             # the onnxruntime build step leaves DirectML.dll as a link that can point nowhere: then the copy
             # kept in bin/ goes in, and without either the installed app would not start, so stop
@@ -44,14 +44,14 @@ def main():
                     z.write(full, os.path.relpath(full, ROOT).replace("\\", "/"))
         for f in ("README.md",):
             z.write(os.path.join(ROOT, f), f)
-        z.write(os.path.join(ROOT, "assets", "kesit.ico"), "kesit.ico")
+        z.write(os.path.join(ROOT, "assets", "linnea.ico"), "linnea.ico")
     print(f"payload {os.path.getsize(payload) / 1e6:.1f} MB")
     # The installer embeds the payload; make sure it rebuilds when the payload changes.
     os.utime(os.path.join(ROOT, "crates", "setup", "src", "main.rs"))
-    cargo("build", "--release", "-p", "kesit-setup")
-    out = os.path.join(DIST, "Kesit-Setup.exe")
-    shutil.copy2(os.path.join(TARGET, "release", "Kesit-Setup.exe"), out)
-    for exe in ("kesit.exe", "kesit-app.exe", "DirectML.dll"):
+    cargo("build", "--release", "-p", "linnea-setup")
+    out = os.path.join(DIST, "Linnea-Setup.exe")
+    shutil.copy2(os.path.join(TARGET, "release", "Linnea-Setup.exe"), out)
+    for exe in ("linnea.exe", "linnea-app.exe", "DirectML.dll"):
         if not os.path.isfile(os.path.join(TARGET, "release", exe)):
             continue
         try:

@@ -53,7 +53,7 @@ pub fn get(url: &str, timeout_s: u64) -> Result<(u16, String)> {
 
 /// A multipart/form-data body. Returns (content type, bytes).
 pub fn multipart(fields: &[(&str, &str)], file_field: &str, file_name: &str, file_type: &str, file: &[u8]) -> (String, Vec<u8>) {
-    let b = format!("----kesit{:x}{:x}", fastrand::u64(..), fastrand::u64(..));
+    let b = format!("----linnea{:x}{:x}", fastrand::u64(..), fastrand::u64(..));
     let mut out = Vec::with_capacity(file.len() + 1024);
     for (k, v) in fields {
         out.extend_from_slice(format!("--{b}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n").as_bytes());
