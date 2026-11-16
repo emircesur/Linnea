@@ -1,10 +1,10 @@
-//! `kesit`: the same tools as the app and the MCP server, from a terminal.
-//!   kesit tools                         list the tools
-//!   kesit <tool> key=value ...          run one (values are JSON when they parse, else text)
-//!   kesit <tool> '{"json": "args"}'     or pass the arguments as one JSON object
-//!   kesit serve [--port N]              the local server (open the printed address in a browser)
-//!   kesit mcp                           MCP server over stdio, for Claude Code and other agents
-use kesit_core::{config::Config, proc::Rep, server, tools};
+//! `linnea`: the same tools as the app and the MCP server, from a terminal.
+//!   linnea tools                         list the tools
+//!   linnea <tool> key=value ...          run one (values are JSON when they parse, else text)
+//!   linnea <tool> '{"json": "args"}'     or pass the arguments as one JSON object
+//!   linnea serve [--port N]              the local server (open the printed address in a browser)
+//!   linnea mcp                           MCP server over stdio, for Claude Code and other agents
+use linnea_core::{config::Config, proc::Rep, server, tools};
 use serde_json::{json, Value};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -30,9 +30,9 @@ fn parse_args(rest: &[String]) -> Result<Value, String> {
 }
 
 fn help() {
-    println!("kesit {} - local reel editor\n", kesit_core::VERSION);
-    println!("  kesit tools                      list the tools\n  kesit <tool> key=value ...       run a tool\n  kesit serve [--port N]           local server for the interface\n  kesit mcp                        MCP server (stdio)\n  kesit agent                      how to connect Claude Code\n");
-    println!("First run:  kesit doctor");
+    println!("linnea {} - local reel editor\n", linnea_core::VERSION);
+    println!("  linnea tools                      list the tools\n  linnea <tool> key=value ...       run a tool\n  linnea serve [--port N]           local server for the interface\n  linnea mcp                        MCP server (stdio)\n  linnea agent                      how to connect Claude Code\n");
+    println!("First run:  linnea doctor");
 }
 
 fn main() {
@@ -40,12 +40,12 @@ fn main() {
     let Some(cmd) = args.first().map(|s| s.as_str()) else { return help() };
     match cmd {
         "-h" | "--help" | "help" => help(),
-        "mcp" => kesit_core::mcp::serve(),
+        "mcp" => linnea_core::mcp::serve(),
         "serve" => {
             let port = args.iter().position(|a| a == "--port").and_then(|i| args.get(i + 1)).and_then(|p| p.parse().ok());
             match server::start(port) {
                 Ok(p) => {
-                    println!("Kesit is at http://127.0.0.1:{p}  (Ctrl+C stops it)");
+                    println!("Linnea is at http://127.0.0.1:{p}  (Ctrl+C stops it)");
                     loop {
                         std::thread::sleep(std::time::Duration::from_secs(3600));
                     }
@@ -62,8 +62,8 @@ fn main() {
             }
         }
         "agent" => {
-            let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "kesit".into());
-            println!("Claude Code:\n  claude mcp add kesit -- \"{exe}\" mcp\n\nAny MCP client (JSON):\n  {{\"mcpServers\": {{\"kesit\": {{\"command\": \"{}\", \"args\": [\"mcp\"]}}}}}}\n\nThe skill for agents is in skill/kesit/SKILL.md (copy the folder to ~/.claude/skills/kesit).", exe.replace('\\', "/"));
+            let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "linnea".into());
+            println!("Claude Code:\n  claude mcp add linnea -- \"{exe}\" mcp\n\nAny MCP client (JSON):\n  {{\"mcpServers\": {{\"linnea\": {{\"command\": \"{}\", \"args\": [\"mcp\"]}}}}}}\n\nThe skill for agents is in skill/linnea/SKILL.md (copy the folder to ~/.claude/skills/linnea).", exe.replace('\\', "/"));
         }
         name => {
             let a = match parse_args(&args[1..]) {
@@ -86,7 +86,7 @@ fn main() {
                 Arc::new(AtomicBool::new(false)),
             );
             let res = tools::call_with(&Config::load(), "terminal", name, &a, false, rep);
-            kesit_core::film::close_pages();
+            linnea_core::film::close_pages();
             match res {
                 Ok(v) => {
                     eprint!("\r                                        \r");

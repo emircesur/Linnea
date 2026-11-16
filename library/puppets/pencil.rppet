@@ -1,5 +1,5 @@
 {
- "kesit": "rppet/1",
+ "linnea": "rppet/1",
  "version": 1,
  "label": "Pencil",
  "desc": "Yellow pencil. idle: stands and sways a little; write: its tip writes a wavy line left to right over the state's length and leaves ink behind.",

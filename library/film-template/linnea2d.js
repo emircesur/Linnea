@@ -1,5 +1,5 @@
-// kesit2d.js: draws the layers you edit in Kesit (tweaks.json items2d) over the page, after renderOut(t).
-// The same picture in the live preview and in renders. Kesit edits them live through window.VH2D.set(items).
+// linnea2d.js: draws the layers you edit in Linnea (tweaks.json items2d) over the page, after renderOut(t).
+// The same picture in the live preview and in renders. Linnea edits them live through window.VH2D.set(items).
 //
 // A layer: {id, kind, t0, t1, x, y, w, h, rot, scale, opacity, fade, anim, parent, keys: [{t, x, y, w, h, rot,
 // scale, opacity, ease}], ...kind fields}. Keys animate any of those properties between their times (a rig:
@@ -177,7 +177,7 @@
             const ny = -h * 0.15 + h * 0.2 * (1 - Math.pow(1 - life, 3));
             g.fillStyle = 'rgba(255,255,255,0.94)'; g.beginPath(); g.roundRect(w * 0.08, ny, w * 0.84, h * 0.11, w * 0.05); g.fill();
             g.fillStyle = '#111'; g.font = `600 ${Math.round(w * 0.05)}px ${FONT}`; g.textAlign = 'left'; g.textBaseline = 'middle';
-            g.fillText(it.title || 'Kesit', w * 0.13, ny + h * 0.035);
+            g.fillText(it.title || 'Linnea', w * 0.13, ny + h * 0.035);
             g.font = `400 ${Math.round(w * 0.045)}px ${FONT}`; g.fillText(it.text, w * 0.13, ny + h * 0.075);
           }
           g.restore();
@@ -207,13 +207,13 @@
   }
 
   // ======================= KE: the editable engine =======================
-  // Anything a film draws through KE (or any text it draws with fillText) shows up in Kesit as an
+  // Anything a film draws through KE (or any text it draws with fillText) shows up in Linnea as an
   // element the user can select, move, resize, turn, fade, retime and re-type, without touching code.
   // The user's changes live in tweaks.json `edits` ({id: {dx, dy, scale, rot, opacity, hidden, t0, t1,
   // text, color, size, keys: [{t, dx, dy, scale, rot, opacity, ease}]}}) and are applied here, in the
   // live preview and in renders alike.
   // ---- puppets: library drawings (.ppet) and animated ones with named states (.rppet), in puppets/ ----------
-  // file: {kesit: 'ppet/1', label, size: [w, h], params: {key: {type, default}}, states: {name: {dur, loop}},
+  // file: {linnea: 'ppet/1', label, size: [w, h], params: {key: {type, default}}, states: {name: {dur, loop}},
   //        initial, assets: {key: src}, draw: "function (g, p, t, s, u) {...}"} painting in the box 0..size.
   const PUPPETS = {};
   const MISSING = {};   // name -> when it was last looked for and not found
@@ -304,7 +304,7 @@
     }
     g.save();
     if (w && h) g.scale(w / def.w, h / def.h);
-    // the puppet's whole box counts as painted, so its selection box in Kesit never shrinks to a detail
+    // the puppet's whole box counts as painted, so its selection box in Linnea never shrinks to a detail
     if (curAcc) devBox(g, 0, 0, def.w, def.h, curAcc);
     // a puppet with mouth / blink params talks with the film's voice and blinks, unless set by hand
     const pp = puppetParams(def, params), dp = def.params || {};
@@ -365,7 +365,7 @@
     devBox(g, x0, y0, w, size * 1.2, acc);
   }
   // Measure what a draw function paints, in canvas pixels.
-  // mute: measure only, paint nothing (a hidden element keeps a clickable box in Kesit, never a pixel)
+  // mute: measure only, paint nothing (a hidden element keeps a clickable box in Linnea, never a pixel)
   const PAINTS = new Set(['fillText', 'strokeText', 'fillRect', 'strokeRect', 'drawImage']);
   let curAcc = null;   // the box being measured, for drawings that know their own extent (puppets)
   function track(g, fn, mute) {
@@ -504,7 +504,7 @@
           if (e.opacity !== undefined) this.globalAlpha *= e.opacity;
           if (isFill && e.color) this.fillStyle = e.color;
         }
-        // hidden: not drawn, still measured below so Kesit can show where it is
+        // hidden: not drawn, still measured below so Linnea can show where it is
         const r = e && e.hidden ? undefined : mw === undefined ? orig.call(this, txt, x, y) : orig.call(this, txt, x, y, mw);
         if (isFill) {
           const acc = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };

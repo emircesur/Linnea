@@ -19,11 +19,11 @@ use std::path::{Path, PathBuf};
 fn download(url: &str, to: &Path, rep: &Rep, label: &str) -> Result<()> {
     let agent = crate::net::agent_with(3600, true);
     let host = url.split('/').nth(2).unwrap_or(url).to_string();
-    let resp = match agent.get(url).header("User-Agent", "kesit").call() {
+    let resp = match agent.get(url).header("User-Agent", "linnea").call() {
         Ok(r) => r,
         Err(e) if e.to_string().contains("UnknownIssuer") || e.to_string().to_lowercase().contains("certificate") => crate::net::agent_webpki(3600)
             .get(url)
-            .header("User-Agent", "kesit")
+            .header("User-Agent", "linnea")
             .call()
             .map_err(|e2| anyhow!("download {label} from {host}: {e2}. The certificate was not trusted; an antivirus or proxy that inspects HTTPS can cause this"))?,
         Err(e) => bail!("download {label} from {host}: {e}"),
@@ -342,7 +342,7 @@ fn trash(c: &Ctx, a: &Value) -> Result<Value> {
 pub const TOOLS: &[Tool] = &[
     Tool { name: "trash", desc: "Move a file or folder inside the workspace to the Recycle Bin (never deletes outright).", params: &[("path!", "string", "Path")], long: false, app_only: true, run: trash },
     Tool { name: "matte", desc: "Cut the person out of a stretch of video (a project source or any `file`): a gray matte video (white = person). Local, on the GPU. model: rvm (default, fast and steady), rvm-hq, birefnet-lite, birefnet-portrait (ghost-editor's).", params: &[("project", "string", "Project"), ("file", "string", "Any video instead"), ("from", "number", "Start s"), ("to", "number", "End s"), ("model", "string", "rvm | rvm-hq | birefnet-lite | birefnet-portrait"), ("out", "string", "Output .mkv")], long: true, app_only: false, run: matte_tool },
-    Tool { name: "setup_tools", desc: "Download the media tools into Kesit's own folder: ffmpeg, yt-dlp, whisper (whisper.cpp, the CUDA build when an NVIDIA card is present), model (ggml large-v3-turbo; model:small for a smaller one), face (the face model). With no `what` it fetches whatever is missing.", params: &[("what", "array", "ffmpeg | yt-dlp | whisper | model[:name] | face | matte[:id] | piper | voice:<lang>")], long: true, app_only: false, run: setup_tools },
+    Tool { name: "setup_tools", desc: "Download the media tools into Linnea's own folder: ffmpeg, yt-dlp, whisper (whisper.cpp, the CUDA build when an NVIDIA card is present), model (ggml large-v3-turbo; model:small for a smaller one), face (the face model). With no `what` it fetches whatever is missing.", params: &[("what", "array", "ffmpeg | yt-dlp | whisper | model[:name] | face | matte[:id] | piper | voice:<lang>")], long: true, app_only: false, run: setup_tools },
     Tool { name: "export_subs", desc: "Write the reel's captions as an SRT or VTT file (edit times) into renders/, for platforms that take a caption file.", params: &[("project!", "string", "Project"), ("reel", "string", "Reel id"), ("format", "string", "srt | vtt"), ("group", "number", "Words per caption")], long: false, app_only: false, run: export_subs },
     Tool { name: "render_batch", desc: "Render several reels (default: every clip reel) in one or more shapes (9:16, 1:1, 4:5, 16:9; default the reel's own). Each render is checked. Only when the user asked for renders.", params: &[("project!", "string", "Project"), ("reels", "array", "Reel ids"), ("formats", "array", "9:16 | 1:1 | 4:5 | 16:9"), ("mode", "string", "final | preview")], long: true, app_only: false, run: batch },
     Tool { name: "reel_undo", desc: "Undo the last change to a reel (every save keeps the previous version); redo=true steps forward again.", params: &[("project!", "string", "Project"), ("reel", "string", "Reel id"), ("redo", "boolean", "Redo instead")], long: false, app_only: false, run: undo },

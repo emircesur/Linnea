@@ -1,6 +1,6 @@
 //! The edits a person makes without code, kept in the film's `tweaks.json` as VideoHub does:
 //! `sound` and `audio.clips` (the sound layer mixer, applied by rebuilding audio/mix.wav),
-//! `items2d` (2D layers drawn over the film by the kesit2d.js hook, in the preview and in renders),
+//! `items2d` (2D layers drawn over the film by the linnea2d.js hook, in the preview and in renders),
 //! and the Thumbnail Studio (`thumbnails/<id>/`: a laid-out brief, variants Claude makes, the final).
 use crate::config::*;
 use crate::film::{self, Film};
@@ -198,16 +198,23 @@ fn t_clip_add(c: &Ctx, a: &Value) -> Result<Value> {
 
 // ---------- 2D layers ----------
 
-const HOOK: &str = "kesit2d.js";
+const HOOK: &str = "linnea2d.js";
 
 fn hook_installed(f: &Film, page: &str) -> bool {
-    std::fs::read_to_string(f.dir.join(page)).map(|s| s.contains(HOOK)).unwrap_or(false)
+    std::fs::read_to_string(f.dir.join(page)).map(|s| s.contains(HOOK) || s.contains(crate::layers::OLD_HOOK)).unwrap_or(false)
+}
+
+/// Put the newest engine next to the page; a film from before the rename gets its script tag renamed too.
+fn refresh_hook(f: &Film, page: &str) -> Result<()> {
+    std::fs::copy(library_dir().join("film-hooks").join(HOOK), f.dir.join(HOOK))?;
+    crate::layers::rename_old_hook(&f.dir, page);
+    Ok(())
 }
 
 fn install_hook(cfg: &Config, f: &Film) -> Result<()> {
     let info = film::info(cfg, f);
     let page = jsd(&info, "page", "index.html").to_string();
-    std::fs::copy(library_dir().join("film-hooks").join(HOOK), f.dir.join(HOOK))?;
+    refresh_hook(f, &page)?;
     if !f.dir.join("tweaks.json").is_file() {
         write_json(&f.dir.join("tweaks.json"), &json!({}))?;
     }
@@ -238,7 +245,7 @@ fn t_2d(c: &Ctx, a: &Value) -> Result<Value> {
     }
     // keep the hook current, so older films get the newest engine
     if hook_installed(&f, jsd(&info, "page", "index.html")) {
-        let _ = std::fs::copy(library_dir().join("film-hooks").join(HOOK), f.dir.join(HOOK));
+        let _ = refresh_hook(&f, jsd(&info, "page", "index.html"));
     }
     if let (Some(n), Some(data)) = (js(&a["upload"], "name"), js(&a["upload"], "data")) {
         return Ok(json!({"src": crate::layers::save_upload(&f.dir, n, data)?}));
@@ -256,7 +263,7 @@ fn t_2d(c: &Ctx, a: &Value) -> Result<Value> {
     }
     Ok(json!({"items": tweaks(&f)["items2d"].as_array().cloned().unwrap_or_default(), "edits": tweaks(&f)["edits"], "installed": hook_installed(&f, jsd(&info, "page", "index.html")),
               "size": [info["width"], info["height"]],
-              "note": "items2d = [{id, kind: text|image|rect|counter|marker|arrow|phone|lower|progress|puppet, t0, t1, x, y, w, h (px), rot, scale, opacity, fade, anim: fade|slide-up|slide-left|pop, parent, hidden, keys: [{t, x, y, w, h, rot, scale, opacity, ease: linear|in|out|inOut|back}], text, sub, font, weight, size, color, stroke, bg, radius, align, from, to, prefix, suffix, src}]. A puppet layer: {kind: 'puppet', puppet: name (puppet_link it first), params: {..}, states: [{state, t0 (seconds from the layer's t0)}]}. `items` replaces the whole list: read it, change it, send it back. Drawn over the film by kesit2d.js in the preview and in renders."}))
+              "note": "items2d = [{id, kind: text|image|rect|counter|marker|arrow|phone|lower|progress|puppet, t0, t1, x, y, w, h (px), rot, scale, opacity, fade, anim: fade|slide-up|slide-left|pop, parent, hidden, keys: [{t, x, y, w, h, rot, scale, opacity, ease: linear|in|out|inOut|back}], text, sub, font, weight, size, color, stroke, bg, radius, align, from, to, prefix, suffix, src}]. A puppet layer: {kind: 'puppet', puppet: name (puppet_link it first), params: {..}, states: [{state, t0 (seconds from the layer's t0)}]}. `items` replaces the whole list: read it, change it, send it back. Drawn over the film by linnea2d.js in the preview and in renders."}))
 }
 
 // ---------- thumbnails ----------
@@ -386,7 +393,7 @@ fn t_brief(c: &Ctx, a: &Value) -> Result<Value> {
     let notes: Vec<Value> = read_json_or(&d.join("notes.json"), json!([])).as_array().cloned().unwrap_or_default().into_iter().filter(|n| jsd(n, "status", "open") == "open").collect();
     let refs: Vec<String> = images_in(&d.join("refs"));
     Ok(json!({
-        "goal": format!("Make variants of the thumbnail \"{}\". Save each image anywhere and register it with hub_thumb_variant; the user picks one and the title text is added in Kesit.", jsd(&doc, "title", "")),
+        "goal": format!("Make variants of the thumbnail \"{}\". Save each image anywhere and register it with hub_thumb_variant; the user picks one and the title text is added in Linnea.", jsd(&doc, "title", "")),
         "format": doc["format"], "slots": vals, "camera": cam, "light": light, "style": doc["style"], "layers_in_words": layers, "title_text": texts,
         "prompt_draft": prompt, "references": refs, "layout_png": d.join("layout.png").is_file().then(|| fwd(&d.join("layout.png"))),
         "sketch_png": d.join("sketch.png").is_file().then(|| fwd(&d.join("sketch.png"))), "open_variant_notes": notes, "variants": images_in(&d.join("variants")),
@@ -433,7 +440,7 @@ pub const TOOLS: &[Tool] = &[
     Tool { name: "hub_sound", desc: "The film's sound layers (stems: voice, music, sfx, stems/*.wav; else its mix), the mixer settings and added clips, from tweaks.json. `set` merges mixer settings {levels: {layer: dB}, mute: [layer], solo, removeMusic, duck: [{from, to, db}]}; `clips` replaces the clip list.", params: &[FR, ("set", "object", "Mixer settings to merge"), ("clips", "array", "[{file, at, gain, name}]")], long: false, app_only: false, run: t_sound },
     Tool { name: "hub_sound_apply", desc: "Rebuild audio/mix.wav from the sound layers, levels, mutes, ducking and clips (the original is kept once as <mix>.vhorig.wav). The preview and renders use the new mix.", params: &[FR], long: false, app_only: false, run: t_sound_apply },
     Tool { name: "hub_sound_clip", desc: "Add a sound to the film's timeline: the file is copied into vhaudio/ and listed in tweaks.json audio.clips. Then hub_sound_apply.", params: &[FR, ("file!", "string", "Sound file"), ("at!", "number", "Second"), ("gain", "number", "dB"), ("name", "string", "Label")], long: false, app_only: false, run: t_clip_add },
-    Tool { name: "hub_2d", desc: "2D layers over the film (tweaks.json items2d): titles, labels, pictures, boxes, counters, arrows, lower thirds and library puppets, each with a time range, keyframes and an optional parent. The kesit2d.js hook draws them in the preview and in renders; install=true adds the hook to the page. `items` replaces the list; add_image copies a picture into vh2d/.", params: &[FR, ("items", "array", "The layers"), ("install", "boolean", "Add the hook to the page"), ("add_image", "string", "Picture to copy into vh2d/"), ("edits", "object", "The user's edits of elements the film draws through KE (or of plain text): {id: {dx, dy, scale, rot, opacity, hidden, t0, t1, text, color, size, keys}}")], long: false, app_only: false, run: t_2d },
+    Tool { name: "hub_2d", desc: "2D layers over the film (tweaks.json items2d): titles, labels, pictures, boxes, counters, arrows, lower thirds and library puppets, each with a time range, keyframes and an optional parent. The linnea2d.js hook draws them in the preview and in renders; install=true adds the hook to the page. `items` replaces the list; add_image copies a picture into vh2d/.", params: &[FR, ("items", "array", "The layers"), ("install", "boolean", "Add the hook to the page"), ("add_image", "string", "Picture to copy into vh2d/"), ("edits", "object", "The user's edits of elements the film draws through KE (or of plain text): {id: {dx, dy, scale, rot, opacity, hidden, t0, t1, text, color, size, keys}}")], long: false, app_only: false, run: t_2d },
     Tool { name: "hub_thumbs", desc: "The thumbnails of a film (or the shared area) and the Thumbnail Studio templates.", params: &[FO], long: false, app_only: false, run: t_thumbs },
     Tool { name: "hub_thumb_new", desc: "Start a thumbnail from a template (or blank), filling its slots.", params: &[FO, ("title!", "string", "Title"), ("template", "string", "Template id"), ("slots", "object", "Slot values"), ("format", "string", "16:9 | 9:16")], long: false, app_only: false, run: t_thumb_new },
     Tool { name: "hub_thumb", desc: "One thumbnail: its layout document, variants, final and notes. `set` merges into thumb.json; layout / sketch / final take PNG data URLs.", params: &[FO, ("id!", "string", "Thumbnail id"), ("set", "object", "Merge into thumb.json"), ("layout", "string", "PNG data URL"), ("sketch", "string", "PNG data URL"), ("final", "string", "PNG data URL")], long: false, app_only: false, run: t_thumb },

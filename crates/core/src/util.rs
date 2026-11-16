@@ -120,6 +120,10 @@ pub fn find_resource(env: &str, rel: &str, marker: &str) -> Option<PathBuf> {
         }
     }
     let mut starts = vec![exe_dir()];
+    // a macOS app bundle keeps its files in Contents/Resources, next to Contents/MacOS
+    if let Some(res) = exe_dir().parent().map(|c| c.join("Resources")).filter(|r| r.is_dir()) {
+        starts.push(res);
+    }
     if let Ok(c) = std::env::current_dir() {
         starts.push(c);
     }
@@ -137,7 +141,7 @@ pub fn find_resource(env: &str, rel: &str, marker: &str) -> Option<PathBuf> {
 }
 
 pub fn library_dir() -> PathBuf {
-    find_resource("KESIT_LIBRARY", "library", "styles").unwrap_or_else(|| exe_dir().join("library"))
+    find_resource("LINNEA_LIBRARY", "library", "styles").unwrap_or_else(|| exe_dir().join("library"))
 }
 
 pub fn clampf(x: f64, a: f64, b: f64) -> f64 {

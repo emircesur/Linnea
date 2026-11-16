@@ -1,5 +1,5 @@
 {
- "kesit": "ppet/1",
+ "linnea": "ppet/1",
  "version": 1,
  "label": "Speech bubble",
  "desc": "A speech bubble with a tail. Text wraps inside; params change text, colours and which side the tail is on.",

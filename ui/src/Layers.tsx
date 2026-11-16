@@ -1,5 +1,5 @@
 // Layers over a film or a reel: drag, resize, edit text in place, drop pictures, keyframe and rig.
-// The same item format as kesit2d.js draws (tweaks.json items2d); evalItem mirrors its motion exactly.
+// The same item format as linnea2d.js draws (tweaks.json items2d); evalItem mirrors its motion exactly.
 import { tx } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Diamond, Eye, EyeOff, Gauge, Hash, Image as ImageIcon, PenLine, Smartphone, Square, Trash2, Type, Rows3 } from "lucide-react";
@@ -18,7 +18,7 @@ const EASE: Record<string, (k: number) => number> = {
   back: (k) => { const c = 1.7; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); },
 };
 
-/** A point k (0..1) of the way along a polyline, by length, and the heading there (as kesit2d.js). */
+/** A point k (0..1) of the way along a polyline, by length, and the heading there (as linnea2d.js). */
 function alongPath(P: number[][], k: number) {
   const L: number[] = [];
   let tot = 0;

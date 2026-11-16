@@ -1306,55 +1306,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kesit-app"
-version = "0.1.0"
-dependencies = [
- "kesit-core",
- "tao",
- "winresource",
- "wry",
-]
-
-[[package]]
-name = "kesit-cli"
-version = "0.1.0"
-dependencies = [
- "kesit-core",
- "serde_json",
- "winresource",
-]
-
-[[package]]
-name = "kesit-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "dirs 6.0.0",
- "fastrand",
- "ort",
- "rfd",
- "rustface",
- "serde",
- "serde_json",
- "tiny_http",
- "ttf-parser",
- "tungstenite",
- "ureq",
-]
-
-[[package]]
-name = "kesit-setup"
-version = "0.1.0"
-dependencies = [
- "dirs 6.0.0",
- "rfd",
- "serde_json",
- "winresource",
- "zip",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1376,6 +1327,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61ff90caf6077a803a240f62fdbe88645a890bbca49ef8174c3cb0404362171d"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "linnea-app"
+version = "0.1.0"
+dependencies = [
+ "linnea-core",
+ "tao",
+ "winresource",
+ "wry",
+]
+
+[[package]]
+name = "linnea-cli"
+version = "0.1.0"
+dependencies = [
+ "linnea-core",
+ "serde_json",
+ "winresource",
+]
+
+[[package]]
+name = "linnea-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "dirs 6.0.0",
+ "fastrand",
+ "ort",
+ "rfd",
+ "rustface",
+ "serde",
+ "serde_json",
+ "tiny_http",
+ "ttf-parser",
+ "tungstenite",
+ "ureq",
+]
+
+[[package]]
+name = "linnea-setup"
+version = "0.1.0"
+dependencies = [
+ "dirs 6.0.0",
+ "rfd",
+ "serde_json",
+ "winresource",
+ "zip",
 ]
 
 [[package]]
@@ -2249,6 +2249,9 @@ checksum = "ef2bee61e6cffa4635c72d7d81a84294e28f0930db0ddcb0f66d10244674ebed"
 dependencies = [
  "block2",
  "dispatch2",
+ "glib-sys",
+ "gobject-sys",
+ "gtk-sys",
  "js-sys",
  "log",
  "objc2",

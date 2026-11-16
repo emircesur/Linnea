@@ -38,7 +38,7 @@ fn mime(p: &Path) -> &'static str {
 }
 
 pub fn ui_dir() -> Option<PathBuf> {
-    find_resource("KESIT_UI", "ui/dist", "index.html").or_else(|| find_resource("KESIT_UI", "ui", "index.html"))
+    find_resource("LINNEA_UI", "ui/dist", "index.html").or_else(|| find_resource("LINNEA_UI", "ui", "index.html"))
 }
 
 fn json_resp(req: Request, status: u16, v: &Value) {
@@ -90,7 +90,7 @@ fn pct_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).to_string()
 }
 
-/// Only files Kesit owns or a project's own source may be served.
+/// Only files Linnea owns or a project's own source may be served.
 fn allowed(cfg: &Config, p: &Path) -> bool {
     let Ok(c) = p.canonicalize() else { return false };
     let roots = [cfg.workspace(), library_dir(), config::data_dir()];
@@ -174,13 +174,13 @@ fn handle(mut req: Request, port: u16) {
     }
     if path == "/api/activity" {
         let since = query(&url, "since").and_then(|s| s.parse().ok()).unwrap_or(0);
-        let focus = read_json_or(&cfg.workspace().join(".kesit").join("focus.json"), Value::Null);
+        let focus = read_json_or(&cfg.state().join("focus.json"), Value::Null);
         return json_resp(req, 200, &json!({"events": project::read_activity(&cfg, since, 200), "focus": focus, "jobs": crate::jobs::list(), "now": now_ms()}));
     }
     if path == "/oauth/youtube" {
         let msg = match query(&url, "code") {
             Some(code) => match crate::publish::oauth_youtube(&code, port) {
-                Ok(()) => "YouTube connected. You can close this tab and go back to Kesit.".to_string(),
+                Ok(()) => "YouTube connected. You can close this tab and go back to Linnea.".to_string(),
                 Err(e) => format!("YouTube sign-in failed: {e}"),
             },
             None => format!("YouTube sign-in was cancelled: {}", query(&url, "error").unwrap_or_default()),
@@ -240,7 +240,7 @@ fn handle(mut req: Request, port: u16) {
     }
     // The interface.
     let Some(ui) = ui_dir() else {
-        let _ = req.respond(Response::from_string("Kesit's interface files were not found (ui/dist). Build the UI or set KESIT_UI.").with_status_code(500));
+        let _ = req.respond(Response::from_string("Linnea's interface files were not found (ui/dist). Build the UI or set LINNEA_UI.").with_status_code(500));
         return;
     };
     let rel = path.trim_start_matches('/');

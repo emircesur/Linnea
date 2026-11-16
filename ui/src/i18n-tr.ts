@@ -164,7 +164,7 @@ export const TR: Record<string, string> = {
   "Claude Code and other MCP clients use Linnea with the same tools. Every change an agent makes shows up in the open project at once.": "Claude Code ve diğer MCP istemcileri Linnea Kesit'i aynı araçlarla kullanır. Ajanın yaptığı her değişiklik açık projede anında görünür.",
   "Command copied": "Komut kopyalandı",
   "Copy command": "Komutu kopyala",
-  "The same tools in a terminal: kesit tools": "Terminalde aynı araçlar: kesit tools",
+  "The same tools in a terminal: linnea tools": "Terminalde aynı araçlar: linnea tools",
   "Appearance": "Görünüm",
   "Watched film folders": "İzlenen film klasörleri",
   "List film projects from other places too, besides the films folder in the workspace. Container: every subfolder is a film.": "Çalışma klasöründeki films dışında, başka yerlerdeki film projeleri de listelensin. Kapsayıcı: her alt klasör bir filmdir.",

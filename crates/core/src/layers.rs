@@ -34,11 +34,25 @@ pub fn ensure_page(p: &Project, rid: &str, w: u32, h: u32) -> Result<PathBuf> {
     if !d.join("film.js").exists() {
         std::fs::copy(tpl.join("film.js"), d.join("film.js"))?;
     }
-    std::fs::copy(library_dir().join("film-hooks").join("kesit2d.js"), d.join("kesit2d.js"))?;
+    std::fs::copy(library_dir().join("film-hooks").join("linnea2d.js"), d.join("linnea2d.js"))?;
+    rename_old_hook(&d, "index.html");
     if !d.join("tweaks.json").is_file() {
         write_json(&d.join("tweaks.json"), &json!({}))?;
     }
     Ok(d)
+}
+
+/// The engine's name before the rename.
+pub const OLD_HOOK: &str = "kesit2d.js";
+
+/// A page made before the rename loads kesit2d.js: point it at linnea2d.js and drop the old copy.
+pub fn rename_old_hook(d: &Path, page: &str) {
+    let p = d.join(page);
+    if let Ok(s) = std::fs::read_to_string(&p) {
+        if s.contains(OLD_HOOK) && std::fs::write(&p, s.replace(OLD_HOOK, "linnea2d.js")).is_ok() {
+            let _ = std::fs::remove_file(d.join(OLD_HOOK));
+        }
+    }
 }
 
 pub fn items(d: &Path) -> Vec<Value> {
@@ -69,7 +83,7 @@ fn signature(p: &Project, rid: &str, reel: &Value, tl: &Timeline) -> Option<Stri
         return None;
     }
     let mut hs = std::collections::hash_map::DefaultHasher::new();
-    for f in ["film.js", "tweaks.json", "index.html", "kesit2d.js"] {
+    for f in ["film.js", "tweaks.json", "index.html", "linnea2d.js"] {
         std::fs::read(d.join(f)).unwrap_or_default().hash(&mut hs);
     }
     if let Ok(rd) = std::fs::read_dir(d.join("vh2d")) {

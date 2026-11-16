@@ -1,5 +1,5 @@
 // The reel's layer page: drawn over the speaker's video, transparent everywhere else.
-// Layers you add in Kesit (tweaks.json items2d) are drawn by kesit2d.js. Anything else can be drawn here,
+// Layers you add in Linnea (tweaks.json items2d) are drawn by linnea2d.js. Anything else can be drawn here,
 // as a pure function of t (edit seconds of the reel): window.renderOut(t) must clear and redraw.
 (function () {
   const cv = document.getElementById('c'), g = cv.getContext('2d');

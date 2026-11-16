@@ -1,4 +1,4 @@
-//! The tool registry: one set of tools behind the app, the terminal (`kesit <tool> ...`) and the MCP
+//! The tool registry: one set of tools behind the app, the terminal (`linnea <tool> ...`) and the MCP
 //! server. The person and the agent drive the editor with the same commands.
 use crate::analyze::{self, AutocutOpts, ClipOpts};
 use crate::config::*;
@@ -502,14 +502,14 @@ fn recipe(_c: &Ctx, a: &Value) -> Result<Value> {
     let dir = library_dir().join("recipes").join(jsd(&pack, "_recipe", name));
     let read = |f: &str| std::fs::read_to_string(dir.join(f)).ok().map(|s| s.chars().take(14000).collect::<String>());
     Ok(json!({"pack": pack, "system": read("SYSTEM.md"), "readme": read("README.md"), "folder": fwd(&dir),
-              "note": "SYSTEM.md is the original recipe's planning document (written for its HTML renderer). Follow its invariants and slots with Kesit's native beats; `_grammar` in the pack says which parts are native."}))
+              "note": "SYSTEM.md is the original recipe's planning document (written for its HTML renderer). Follow its invariants and slots with Linnea's native beats; `_grammar` in the pack says which parts are native."}))
 }
 
 fn open(c: &Ctx, a: &Value) -> Result<Value> {
     let p = proj(c, a)?;
     let f = json!({"project": p.id(), "reel": p.rid(js(a, "reel")), "t": a["t"], "ts": now_ms(), "by": c.origin});
-    write_json(&c.cfg.workspace().join(".kesit").join("focus.json"), &f)?;
-    Ok(json!({"opened": p.id(), "note": "the Kesit window shows this project now, if it is running"}))
+    write_json(&c.cfg.state().join("focus.json"), &f)?;
+    Ok(json!({"opened": p.id(), "note": "the Linnea window shows this project now, if it is running"}))
 }
 
 fn pick_file(_c: &Ctx, a: &Value) -> Result<Value> {
@@ -535,7 +535,7 @@ fn reveal(_c: &Ctx, a: &Value) -> Result<Value> {
     Ok(json!({"ok": true}))
 }
 
-const ASSISTANT: &str = "You are the editing assistant inside Kesit, a local editor that turns talking-head recordings and long videos into short vertical reels. You work by calling tools; the person watches the result in the app.\n\
+const ASSISTANT: &str = "You are the editing assistant inside Linnea, a local editor that turns talking-head recordings and long videos into short vertical reels. You work by calling tools; the person watches the result in the app.\n\
 Rules of the craft:\n\
 - Every time in a reel is an ORIGINAL-recording second from the transcript (`words`). Cut on word times: a = first word - 0.10..0.15, b = last word + 0.20..0.30.\n\
 - Transcribe first if there is no transcript. For one clean take use `autocut`; for a recording with retakes use `retakes`; for a long video use `clips_find` then `clip_make`.\n\
@@ -555,7 +555,7 @@ fn reel_tool(t: &Tool) -> bool {
 /// The tools the film assistant may call. hub_file is how it edits the film's code.
 const FILM_TOOLS: &[&str] = &["hub_project", "hub_file", "hub_live", "hub_frame", "hub_notes", "hub_note_update", "hub_2d", "hub_sound", "hub_lipsync", "puppet_list", "puppet_get", "puppet_save", "puppet_link", "puppet_sync"];
 
-const FILM_ASSISTANT: &str = "You are the film assistant inside Kesit, a local studio where films are written as code. The person watches the film play live from its code in the app and asks you for changes; you make them by editing the film's files with tools. The preview reloads by itself when a file changes.\n\
+const FILM_ASSISTANT: &str = "You are the film assistant inside Linnea, a local studio where films are written as code. The person watches the film play live from its code in the app and asks you for changes; you make them by editing the film's files with tools. The preview reloads by itself when a file changes.\n\
 The contract:\n\
 - index.html holds a fixed-size canvas (#c). film.js defines window.renderOut(t), which draws second t of the film as a PURE function of t: no Date.now(), no state carried between frames, no unseeded Math.random() (use the seeded rand helper). It may return a promise. window.READY = true once assets are loaded. window.VH_SCENES = [{name, t0, t1}] labels the timeline. Sound is audio/mix.wav.\n\
 - Every on-screen element is drawn through el(id, t, def, draw) (KE.group), KE.text or KE.puppet with a stable id, so the person can move, resize, re-type and re-time it by hand. Their hand edits live in tweaks.json `edits`, keyed by those ids: keep the ids of existing elements, read p.text / p.color inside draw, and never write tweaks.json (hub_2d reads and changes the hand-placed layers and the edits).\n\
@@ -761,7 +761,7 @@ fn ask(c: &Ctx, a: &Value) -> Result<Value> {
             Err(e) => format!("Error: {e}").into(),
         }
     };
-    let hist_path = p.p(".kesit/assistant.json");
+    let hist_path = crate::config::state_dir(&p.dir).join("assistant.json");
     let user = format!("{user}\n{}", history(&hist_path));
     let answer = llm::agent(&c.cfg, ASSISTANT, &user, &specs, &mut exec, 24)?;
     remember(&hist_path, json!({"q": prompt, "a": answer}));
@@ -799,7 +799,7 @@ const T: &[Tool] = &[
         Tool { name: "note_update", desc: "After fixing a note: status fixed and a short reply the user will see.", params: &[P, ("id!", "string", "Note id"), ("status", "string", "open | fixed | wontfix"), ("reply", "string", "Short reply"), ("delete", "boolean", "Remove the note")], long: false, app_only: false, run: note_update },
         Tool { name: "taste", desc: "The user's standing corrections across reels. `add` records one in their words when they correct an edit decision; `forget` removes one.", params: &[("add", "string", "The correction, in the user's words"), ("from", "string", "user | skill"), ("forget", "string", "Rule id")], long: false, app_only: false, run: taste },
         Tool { name: "library", desc: "The sound kit (ids, roles) and which template fonts are installed.", params: &[("query", "string", "Filter")], long: false, app_only: false, run: library },
-        Tool { name: "open", desc: "Show a project (and reel) in the Kesit window so the user can watch and leave notes.", params: &[P, R, ("t", "number", "Edit seconds to jump to")], long: false, app_only: false, run: open },
+        Tool { name: "open", desc: "Show a project (and reel) in the Linnea window so the user can watch and leave notes.", params: &[P, R, ("t", "number", "Edit seconds to jump to")], long: false, app_only: false, run: open },
         Tool { name: "ask", desc: "Ask the configured assistant to edit this reel in plain words.", params: &[P, R, ("prompt!", "string", "What to do")], long: true, app_only: true, run: ask },
         Tool { name: "hub_ask", desc: "Ask the configured assistant to change a film in plain words: it reads and edits the film's code, checks the page and looks at its own frames.", params: &[("film!", "string", "Film id"), ("prompt!", "string", "What to change"), ("t", "number", "The second on screen"), ("element", "string", "Id of the selected element")], long: true, app_only: true, run: hub_ask },
         Tool { name: "pick_file", desc: "Open the system file dialog.", params: &[("folder", "boolean", "Pick a folder")], long: false, app_only: true, run: pick_file },

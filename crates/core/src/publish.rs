@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 fn guard(c: &Ctx) -> Result<()> {
     if c.origin == "agent" && c.cfg.get("publish.agent").and_then(|v| v.as_bool()) != Some(true) {
-        bail!("publishing is the user's step: they press Publish in Kesit. Tell them the video is ready instead.");
+        bail!("publishing is the user's step: they press Publish in Linnea. Tell them the video is ready instead.");
     }
     Ok(())
 }
@@ -43,7 +43,7 @@ fn t_login(c: &Ctx, _a: &Value) -> Result<Value> {
         "https://accounts.google.com/o/oauth2/v2/auth?client_id={id}&redirect_uri={}&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fyoutube.upload&access_type=offline&prompt=consent",
         redirect(port).replace(':', "%3A").replace('/', "%2F")
     );
-    Ok(json!({"url": url, "note": "open it, allow access; Kesit keeps the refresh token"}))
+    Ok(json!({"url": url, "note": "open it, allow access; Linnea keeps the refresh token"}))
 }
 
 /// Called by the local server when Google sends the browser back with a code.

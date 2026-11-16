@@ -1,5 +1,5 @@
 {
- "kesit": "rppet/1",
+ "linnea": "rppet/1",
  "version": 1,
  "label": "Narrator",
  "desc": "A talking narrator, head and shoulders. Its mouth follows the film voice and it blinks by itself (mouth and blink params); states: idle, nod (a nod), wave (waves a hand).",
