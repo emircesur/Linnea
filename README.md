@@ -218,7 +218,7 @@ Settings live in `%APPDATA%\Linnea\config.json`, tools and models in `%LOCALAPPD
 Coming from a version that was still called Kesit? Run the new installer: it removes the old program
 files, the `kesit` command and the `kesit` MCP entry, and moves your settings to the new folders. Your work
 stays where it is (`Videos\Kesit` keeps working), and old projects and films open as before.
-
+ LINNEA : A Swedish given name derived from the 18th-century Swedish scientist Carl Linnaeus (Carl von Linné) or the twinflower (Linnaea borealis), which was named in his honor.
 ---
 
 ## Credits and license
