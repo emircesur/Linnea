@@ -36,10 +36,14 @@ export function useElements(toolName: string, args: Json, getWin: () => any, red
 }
 export type Elements = ReturnType<typeof useElements>;
 
-/** Play the film quietly through once to learn which elements exist and when they show. */
-export async function scanRegistry(w: any, dur: number, step = 0.5): Promise<Reg[]> {
+/** Every element the film draws, with the seconds it is on screen: the page is drawn every `step` seconds.
+ *  Run it on a page nobody watches (it jumps through the film). It works in short slices so the app stays
+ *  smooth, hands over what it has found so far through `part`, and stops when `alive` turns false. */
+export async function scanRegistry(w: any, dur: number, step = 0.5, part?: (r: Reg[]) => void, alive: () => boolean = () => true): Promise<Reg[]> {
   const reg = new Map<string, Reg>();
+  let slice = performance.now();
   for (let t = 0; t <= dur + 1e-6; t += step) {
+    if (!alive()) break;
     try {
       const r = w.renderOut(t);
       if (r && r.then) await r;
@@ -49,7 +53,12 @@ export async function scanRegistry(w: any, dur: number, step = 0.5): Promise<Reg
       if (x) x.t1 = Math.min(dur, t + step);
       else reg.set(b.id, { id: b.id, label: b.label, kind: b.kind, t0: b.t0 ?? t, t1: b.t1 ?? Math.min(dur, t + step) });
     }
-    if (Math.round(t / step) % 20 === 0) await new Promise((r) => setTimeout(r, 0));
+    // about one frame's worth of work at a time, then the app gets the thread back
+    if (performance.now() - slice > 12) {
+      part?.([...reg.values()].map((x) => ({ ...x })));
+      await new Promise((r) => setTimeout(r, 0));
+      slice = performance.now();
+    }
   }
   return [...reg.values()];
 }

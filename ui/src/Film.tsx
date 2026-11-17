@@ -14,6 +14,9 @@ import { Box, ElementOverlay, ElementPanel, Reg, scanRegistry, useElements } fro
 import { arrange, CardActions, deleteItem, ListTools, renameItem, useStars } from "./Manage";
 import { Pencil } from "lucide-react";
 
+/** The elements found in each film's code (film id @ revision), so opening Layers again needs no new scan. */
+const REGISTRY = new Map<string, Reg[]>();
+
 const STATUS: Record<string, string> = { open: tx("Open"), claude: "Claude'da", fixed: tx("Fixed"), still: tx("Still there"), done: tx("Done"), wontfix: tx("Won't fix") };
 const formats: [string, number, number][] = [["9:16", 1080, 1920], ["16:9", 1920, 1080], ["1:1", 1080, 1080], ["4:5", 1080, 1350]];
 
@@ -201,6 +204,11 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
   useEffect(() => {
     if (side === "layers" && !playing) refreshBoxes();
   }, [t, side, playing, ready]);
+  // The list of all elements comes from drawing the whole film once. That runs on a hidden copy of the page,
+  // so the preview on screen never jumps through the film, and it is kept for the film's current code.
+  const [scanning, setScanning] = useState(false);
+  const scanFrame = useRef<HTMLIFrameElement>(null);
+  const scanKey = `${id}@${rev}`;
   useEffect(() => {
     if (side !== "layers" || !ready || !info) return;
     const w = frame.current?.contentWindow as any;
@@ -208,10 +216,35 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       if (!L.installed) L.install().then(() => say(tx("Editing hook added to the film")));
       return;
     }
-    let live = true;
-    scanRegistry(w, info.dur || 10).then((r) => { if (live) { setReg(r); draw(tRef.current); refreshBoxes(); } });
-    return () => { live = false; };
+    const known = REGISTRY.get(scanKey);
+    if (known) setReg(known);
+    else setScanning(true);
   }, [side, ready, rev]);
+  const onScanLoad = () => {
+    const w = scanFrame.current?.contentWindow as any;
+    const key = scanKey;
+    const alive = () => scanFrame.current?.contentWindow === w && key === scanKeyRef.current;
+    const t0 = Date.now();
+    const wait = () => {
+      if (!alive()) return;
+      if (w?.READY !== true) {
+        if (Date.now() - t0 < 30000) setTimeout(wait, 100);
+        else setScanning(false);
+        return;
+      }
+      try { w.KE?.setEdits(snap.current.edits); } catch { /* an older page */ }
+      scanRegistry(w, info?.dur || 10, 0.5, (r) => alive() && setReg((prev) => (r.length >= prev.length ? r : prev)), alive).then((r) => {
+        if (!alive()) return;
+        REGISTRY.set(key, r);
+        if (REGISTRY.size > 20) REGISTRY.delete(REGISTRY.keys().next().value!);
+        setReg(r);
+        setScanning(false);
+      });
+    };
+    wait();
+  };
+  const scanKeyRef = useRef(scanKey);
+  scanKeyRef.current = scanKey;
   const seek = useCallback((x: number) => {
     x = Math.max(0, Math.min(DUR, Math.round(x * FPS) / FPS));
     tRef.current = x;
@@ -431,6 +464,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
             </>
           )}
         </Viewer>
+        {scanning && info && <iframe ref={scanFrame} key={scanKey} src={`${info.url}?r=${rev}&scan=1`} onLoad={onScanLoad} title="scan" aria-hidden tabIndex={-1} style={{ position: "fixed", left: -20000, top: 0, width: W, height: H, border: 0, visibility: "hidden", pointerEvents: "none" }} />}
         <div id="note-host" style={{ width: "100%", maxWidth: 680 }} />
         {!ready && !watch && <div className="muted" style={{ fontSize: 12 }}>{pageErr ? <span className="err">{pageErr}</span> : tx("Loading the page")}</div>}
         {ready && pageErr && <div className="err" style={{ fontSize: 12 }}>{pageErr}</div>}
