@@ -34,12 +34,22 @@ pub fn ensure_page(p: &Project, rid: &str, w: u32, h: u32) -> Result<PathBuf> {
     if !d.join("film.js").exists() {
         std::fs::copy(tpl.join("film.js"), d.join("film.js"))?;
     }
-    std::fs::copy(library_dir().join("film-hooks").join("linnea2d.js"), d.join("linnea2d.js"))?;
+    copy_if_changed(&library_dir().join("film-hooks").join("linnea2d.js"), &d.join("linnea2d.js"))?;
     rename_old_hook(&d, "index.html");
     if !d.join("tweaks.json").is_file() {
         write_json(&d.join("tweaks.json"), &json!({}))?;
     }
     Ok(d)
+}
+
+/// Copy a file only when the copy differs. Rewriting the same engine on every save would give it a new
+/// modification time, and the preview reloads (and rescans the film) whenever a code file changes.
+pub fn copy_if_changed(src: &Path, dst: &Path) -> Result<()> {
+    let new = std::fs::read(src)?;
+    if std::fs::read(dst).map(|old| old != new).unwrap_or(true) {
+        std::fs::write(dst, new)?;
+    }
+    Ok(())
 }
 
 /// The engine's name before the rename.

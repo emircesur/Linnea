@@ -206,7 +206,7 @@ fn hook_installed(f: &Film, page: &str) -> bool {
 
 /// Put the newest engine next to the page; a film from before the rename gets its script tag renamed too.
 fn refresh_hook(f: &Film, page: &str) -> Result<()> {
-    std::fs::copy(library_dir().join("film-hooks").join(HOOK), f.dir.join(HOOK))?;
+    crate::layers::copy_if_changed(&library_dir().join("film-hooks").join(HOOK), &f.dir.join(HOOK))?;
     crate::layers::rename_old_hook(&f.dir, page);
     Ok(())
 }
