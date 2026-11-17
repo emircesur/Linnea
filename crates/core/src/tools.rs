@@ -532,6 +532,19 @@ fn reveal(_c: &Ctx, a: &Value) -> Result<Value> {
         let arg = if path.is_file() { format!("/select,{}", path.to_string_lossy().replace('/', "\\")) } else { path.to_string_lossy().replace('/', "\\") };
         let _ = std::process::Command::new("explorer.exe").arg(arg).spawn();
     }
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = std::process::Command::new("open");
+        if path.is_file() {
+            cmd.arg("-R");
+        }
+        let _ = cmd.arg(&path).spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let dir = if path.is_file() { path.parent().map(|p| p.to_path_buf()).unwrap_or(path.clone()) } else { path.clone() };
+        let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
+    }
     Ok(json!({"ok": true}))
 }
 
@@ -809,7 +822,7 @@ const T: &[Tool] = &[
 /// Every tool: the film tools (hub_*, VideoHub's surface) and the footage editor's.
 pub fn all() -> &'static [&'static Tool] {
     static A: std::sync::OnceLock<Vec<&'static Tool>> = std::sync::OnceLock::new();
-    A.get_or_init(|| crate::film::TOOLS.iter().chain(crate::studio::TOOLS.iter()).chain(crate::extra::TOOLS.iter()).chain(crate::ai::TOOLS.iter()).chain(crate::publish::TOOLS.iter()).chain(crate::layers::TOOLS.iter()).chain(crate::cues::TOOLS.iter()).chain(crate::puppets::TOOLS.iter()).chain(crate::manage::TOOLS.iter()).chain(T.iter()).collect())
+    A.get_or_init(|| crate::film::TOOLS.iter().chain(crate::studio::TOOLS.iter()).chain(crate::extra::TOOLS.iter()).chain(crate::ai::TOOLS.iter()).chain(crate::publish::TOOLS.iter()).chain(crate::layers::TOOLS.iter()).chain(crate::cues::TOOLS.iter()).chain(crate::puppets::TOOLS.iter()).chain(crate::langs::TOOLS.iter()).chain(crate::update::TOOLS.iter()).chain(crate::manage::TOOLS.iter()).chain(T.iter()).collect())
 }
 
 fn summarize(name: &str, a: &Value, v: &Value) -> String {

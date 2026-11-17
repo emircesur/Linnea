@@ -1,3 +1,4 @@
+import { Update, UpdateNote, UpdateSettings, useUpdate } from "./Update";
 import { BRAND, lang, setLang, tx } from "./i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Clapperboard, Film as FilmIcon, ImageIcon, FolderOpen, Library as LibIcon, Link2, ListVideo, Play, Settings as Cog, Shapes, Square, Trash2, Upload } from "lucide-react";
@@ -27,6 +28,7 @@ export function App() {
   const projects = useLoad(() => tool("projects"), [act.events.length]);
   const doctor = useLoad(() => tool("doctor"), []);
   const settings = useLoad(() => tool("settings"), []);
+  const upd = useUpdate(!!settings.data && settings.data.update?.check !== false);
   const theme = settings.data?.ui?.theme || "grafit";
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -81,7 +83,7 @@ export function App() {
         </nav>
         <span className="grow" />
         <button className={`rail-foot ${route.page === "settings" ? "on" : ""}`} title={`${tx("Settings")} · ${health} · ${doctor.data?.version || ""}`} onClick={() => setRoute({ page: "settings" })}>
-          <span className="ico"><Cog /><i className={`dot ${doctor.data ? (missing ? "bad" : "ok") : ""}`} /></span>
+          <span className="ico"><Cog /><i className={`dot ${doctor.data ? (missing ? "bad" : "ok") : ""}`} />{upd.info?.available && <i className="count num">1</i>}</span>
           <span className="lbl">{tx("Settings")}</span>
         </button>
       </aside>
@@ -94,9 +96,10 @@ export function App() {
         {route.page === "renders" && <Renders act={act} list={list} open={(id) => setRoute({ page: "editor", id })} />}
         {route.page === "library" && <Library />}
         {route.page === "puppets" && <PuppetsPage say={setToast} />}
-        {route.page === "settings" && <Settings doctor={doctor} settings={settings} say={setToast} />}
+        {route.page === "settings" && <Settings doctor={doctor} settings={settings} say={setToast} upd={upd} />}
       </main>
       {toast && <Toast text={toast} onDone={() => setToast("")} />}
+      <UpdateNote u={upd} say={setToast} />
     </div>
   );
 }
@@ -354,7 +357,7 @@ function ToolsDownloadOne({ what, label, say }: { what: string[]; label: string;
   );
 }
 
-function Settings({ doctor, settings, say }: { doctor: ReturnType<typeof useLoad<Json>>; settings: ReturnType<typeof useLoad<Json>>; say: (s: string) => void }) {
+function Settings({ doctor, settings, say, upd }: { doctor: ReturnType<typeof useLoad<Json>>; settings: ReturnType<typeof useLoad<Json>>; say: (s: string) => void; upd: Update }) {
   const d = doctor.data;
   const s = settings.data;
   const info = useLoad(() => fetch("/api/tools").then((r) => r.json()), []);
@@ -376,6 +379,7 @@ function Settings({ doctor, settings, say }: { doctor: ReturnType<typeof useLoad
     <div className="page">
       <div className="sets">
         <div className="page-head" style={{ marginBottom: 0 }}><h1>{tx("Settings")}</h1></div>
+        <UpdateSettings u={upd} auto={s.update?.check !== false} setAuto={(b) => set({ update: { check: b } })} say={say} />
         <section>
           <h2>{tx("Tools")}</h2>
           <div className="card box list-rows">

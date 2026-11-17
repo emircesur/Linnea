@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 // ---------- downloading the tools ----------
 
-fn download(url: &str, to: &Path, rep: &Rep, label: &str) -> Result<()> {
+pub(crate) fn download(url: &str, to: &Path, rep: &Rep, label: &str) -> Result<()> {
     let agent = crate::net::agent_with(3600, true);
     let host = url.split('/').nth(2).unwrap_or(url).to_string();
     let resp = match agent.get(url).header("User-Agent", "linnea").call() {

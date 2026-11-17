@@ -70,6 +70,15 @@ from the code, with no render in between, and reloads the preview the moment Cla
 - NVIDIA, AMD and Intel hardware encoders, or x264 on the CPU.
 - Every version is kept, and you can watch only what changed between two of them.
 
+### One film, many languages
+
+- Add a language and the film's on-screen texts are listed by element. Translate them yourself, let the
+  built-in assistant do it, or hand it to Claude; the frame shows the language as you type.
+- **Check layout** draws the film in that language and points at every text that now runs off the frame or
+  got much wider, with the second it happens.
+- Each language can have its own sound and renders as its own file (`film_de_v3.mp4`).
+- Puppets a film made for itself are saved to the puppet library, so the next film can use them.
+
 ### Long videos into clips
 
 <img src="docs/images/05-clips.png" alt="Highlights found in a podcast episode, each with a score for hook, flow and value" width="100%">
@@ -112,6 +121,8 @@ from the code, with no render in between, and reloads the preview the moment Cla
   Pixabay or image models, eye-contact correction, speed ramps.
 - Publish to YouTube, TikTok and Instagram from the app.
 - Thumbnail studio: lay out a cover from a template, hand the brief to Claude, pick a variant.
+- Storyboard strip under the preview (`B`), keyboard shortcuts for everything (`?`), and updates from
+  GitHub from inside the app (Settings → Updates; on Windows it installs and restarts by itself).
 - Delete (to the Recycle Bin), rename, duplicate, star, search and sort everything.
 - English and Turkish interface (in Turkish the app is called **Linnea Kesit**).
 

@@ -13,6 +13,9 @@ import { LayerList } from "./Elements";
 import { Box, ElementOverlay, ElementPanel, Reg, scanRegistry, useElements } from "./Elements";
 import { arrange, CardActions, deleteItem, ListTools, renameItem, useStars } from "./Manage";
 import { Pencil } from "lucide-react";
+import { Keyboard, LayoutGrid } from "lucide-react";
+import { LangsPanel, ViewLang } from "./Langs";
+import { Shortcuts, Storyboard } from "./Storyboard";
 
 /** The elements found in each film's code (film id @ revision), so opening Layers again needs no new scan. */
 const REGISTRY = new Map<string, Reg[]>();
@@ -95,6 +98,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
   const [ready, setReady] = useState(false);
   const [pageErr, setPageErr] = useState("");
   const [scenes, setScenes] = useState<Json[]>([]);
+  const scenesRef = useRef<Json[]>([]);
   const [rev, setRev] = useState(0);
   const [range, setRange] = useState<[number, number] | null>(null);
   const [mode, setMode] = useState<"live" | "note" | "check">("live");
@@ -150,6 +154,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
   }, [act.events, id, load]);
 
   const W = info?.width || 1920, H = info?.height || 1080, FPS = info?.fps || 30, DUR = info?.dur || 10;
+  scenesRef.current = scenes.length ? scenes : info?.scenes || [];
   const win = () => frame.current?.contentWindow as any;
   const draw = useCallback((x: number) => {
     const w = win();
@@ -161,7 +166,12 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       setPageErr(String(e?.message || e));
     }
   }, []);
-  const [side, setSide] = useState<"versions" | "sound" | "layers" | "ai">("versions");
+  const [side, setSide] = useState<"versions" | "sound" | "layers" | "langs" | "ai">("versions");
+  // the language shown on the frame (null: the film's own texts), and the extra views
+  const [viewLang, setViewLang] = useState<ViewLang>(null);
+  const [board, setBoard] = useState(() => { try { return localStorage.getItem("linnea.board") === "1"; } catch { return false; } });
+  const [keysOpen, setKeysOpen] = useState(false);
+  useEffect(() => { try { localStorage.setItem("linnea.board", board ? "1" : "0"); } catch { /* private window */ } }, [board]);
   const [audioV, setAudioV] = useState(0);
   const [selTrack, setSelTrack] = useState("");
   const [boxes, setBoxes] = useState<Box[]>([]);
@@ -200,6 +210,13 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
   const redo = () => travel(hist.current.future, hist.current.past);
   const undoRef = useRef({ undo, redo });
   undoRef.current = { undo, redo };
+  useEffect(() => {
+    const w = win();
+    if (!ready || !w?.KE?.setLang) return;
+    w.KE.setLang(viewLang?.code || "", viewLang?.texts);
+    draw(tRef.current);
+    refreshBoxes();
+  }, [viewLang, ready]);
   // element editing: boxes of the frame on screen, and once per page load the list of all elements
   useEffect(() => {
     if (side === "layers" && !playing) refreshBoxes();
@@ -210,7 +227,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
   const scanFrame = useRef<HTMLIFrameElement>(null);
   const scanKey = `${id}@${rev}`;
   useEffect(() => {
-    if (side !== "layers" || !ready || !info) return;
+    if ((side !== "layers" && side !== "langs") || !ready || !info) return;
     const w = frame.current?.contentWindow as any;
     if (!w?.KE) {
       if (!L.installed) L.install().then(() => say(tx("Editing hook added to the film")));
@@ -340,11 +357,22 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
         undoRef.current.redo();
         return;
       }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const sc = (scenesRef.current || []).map((x: Json) => x.t0).filter((x: any) => typeof x === "number").sort((a: number, b: number) => a - b);
       if (e.code === "Space") {
         e.preventDefault();
         setPlaying((p) => !p);
       } else if (e.code === "ArrowRight") seek(tRef.current + (e.shiftKey ? 1 : 1 / FPS));
       else if (e.code === "ArrowLeft") seek(tRef.current - (e.shiftKey ? 1 : 1 / FPS));
+      else if (e.key === ".") seek(tRef.current + 1 / FPS);
+      else if (e.key === ",") seek(tRef.current - 1 / FPS);
+      else if (e.code === "Home") { e.preventDefault(); seek(0); }
+      else if (e.code === "End") { e.preventDefault(); seek(DUR); }
+      else if (e.code === "PageDown") { e.preventDefault(); const n = sc.find((x: number) => x > tRef.current + 0.01); if (n !== undefined) seek(n); }
+      else if (e.code === "PageUp") { e.preventDefault(); const p = sc.filter((x: number) => x < tRef.current - 0.25).pop(); seek(p ?? 0); }
+      else if (e.key === "?") setKeysOpen((o) => !o);
+      else if (e.key === "b" || e.key === "B") setBoard((b) => !b);
+      else if (/^[1-5]$/.test(e.key)) { const k = (["versions", "sound", "layers", "langs", "ai"] as const)[+e.key - 1]; setSide(k); if (k === "layers") setPlaying(false); }
       else if (e.key === "n" || e.key === "N") {
         setPlaying(false);
         setMode("note");
@@ -352,7 +380,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [seek, FPS]);
+  }, [seek, FPS, DUR]);
 
   const run = async (label: string, name: string, args: Json) => {
     setBusy({ label, p: 0 });
@@ -440,7 +468,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
         {openNotes.length > 0 && (
           <button className="btn" onClick={() => copy(tx("The film \"{0}\" ({1}) in Linnea has {2} notes. Read them with hub_notes (look at images.crop first), fix them, and for each one write hub_note_update status=fixed with a short reply. Do not render.", info.title, id, openNotes.length), tx("Message for Claude copied"))}><Copy />{tx("Send to Claude")}</button>
         )}
-        <RenderMenu disabled={!!busy} latest={latest} fixed={toCheck.length + notes.filter((n) => n.status === "done" && !n.version).length} run={run} />
+        <RenderMenu disabled={!!busy} latest={latest} fixed={toCheck.length + notes.filter((n) => n.status === "done" && !n.version).length} run={run} lang={viewLang?.code || ""} />
       </div>
 
       <div className="ed-left">
@@ -479,13 +507,19 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
           <button className={`btn sm ${mode === "note" ? "primary" : ""}`} onClick={() => { setPlaying(false); setMode(mode === "note" ? "live" : "note"); }}><Pen />{tx("Note")} <span className="kbd">N</span></button>
           <button className="btn sm" onClick={sendFrame} title={tx("Capture the frame (or the selected range) for Claude")}><ImageIcon />{range ? tx("Range to Claude") : tx("Frame to Claude")}</button>
           {range && <button className="btn icon sm ghost" title={tx("Clear range")} onClick={() => setRange(null)}><X /></button>}
+          <span className="grow" />
+          {viewLang && <button className="btn sm ghost" title={tx("Back to the original texts")} onClick={() => setViewLang(null)} style={{ color: "var(--accent)" }}>{viewLang.code} <X /></button>}
+          <button className={`btn icon sm ${board ? "" : "ghost"}`} onClick={() => setBoard(!board)} title={tx("Storyboard (B)")}><LayoutGrid /></button>
+          <button className="btn icon sm ghost" onClick={() => setKeysOpen(true)} title={tx("Keyboard shortcuts (?)")}><Keyboard /></button>
         </div>
+        {board && !watch && info && <Storyboard url={info.url} rev={rev} lang={viewLang?.code || ""} W={W} H={H} dur={DUR} scenes={scenesRef.current} t={t} seek={(x) => { setPlaying(false); seek(x); }} />}
+        {keysOpen && <Shortcuts close={() => setKeysOpen(false)} />}
         {info.audio && <audio ref={audio} src={fileUrl(info.audio, audioV)} preload="auto" />}
       </div>
 
       <div className="ed-right" style={{ padding: 0, gap: 0 }}>
         <div className="tabs">
-          {([["versions", tx("Versions")], ["sound", tx("Sound")], ["layers", tx("Layers")], ["ai", tx("Assistant")]] as const).map(([k, l]) => (
+          {([["versions", tx("Versions")], ["sound", tx("Sound")], ["layers", tx("Layers")], ["langs", tx("Languages")], ["ai", tx("Assistant")]] as const).map(([k, l]) => (
             <button key={k} className={side === k ? "on" : ""} onClick={() => { setSide(k); if (k === "layers") setPlaying(false); }}>{l}{k === "layers" && L.items.length ? ` ${L.items.length}` : ""}</button>
           ))}
           <span style={{ flex: 1 }} />
@@ -493,6 +527,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
           <button className="btn icon sm ghost" title={tx("Redo (Ctrl+Y)")} disabled={!hist.current.future.length} onClick={redo}><Redo2 /></button>
         </div>
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 24, overflow: "auto", flex: 1 }}>
+        {side === "langs" && <LangsPanel film={id} reg={reg} scanning={scanning} t={t} seek={(x) => { setPlaying(false); seek(x); }} say={say} view={viewLang} setView={setViewLang} run={run} copy={copy} />}
         {side === "ai" && <FilmAssistant id={id} dir={info.dir} t={t} fps={FPS} sel={selEl} run={run} busy={!!busy} say={say} />}
         {side === "sound" && <SoundPanel film={id} t={t} range={range} say={say} onApplied={() => { setAudioV(Date.now()); load(); }} />}
         {side === "layers" && selEl && <ElementPanel id={selEl} box={boxes.find((b) => b.id === selEl)} reg={reg.find((r) => r.id === selEl)} E={E} t={t} close={() => setSelEl("")} />}
@@ -852,13 +887,14 @@ function NotesList({ notes, fps, seek, update }: Json) {
   );
 }
 
-function RenderMenu({ disabled, latest, fixed, run }: Json) {
+function RenderMenu({ disabled, latest, fixed, run, lang }: Json) {
   const [open, setOpen] = useState(false);
   const [enc, setEnc] = useState("auto");
   const [scale, setScale] = useState(1);
   const go = (mode: string) => {
     setOpen(false);
-    run(mode === "preview" ? tx("Preview render") : mode === "partial" ? tx("Changed chunks") : tx("Full render"), "hub_render", { mode, encoder: enc, ...(mode === "full" && scale !== 1 ? { scale } : {}) });
+    const label = mode === "preview" ? tx("Preview render") : mode === "partial" ? tx("Changed chunks") : tx("Full render");
+    run(lang ? `${label} (${lang})` : label, "hub_render", { mode, encoder: enc, ...(mode === "full" && scale !== 1 ? { scale } : {}), ...(lang ? { lang } : {}) });
   };
   return (
     <div style={{ position: "relative" }}>
@@ -868,6 +904,7 @@ function RenderMenu({ disabled, latest, fixed, run }: Json) {
           <button className="opt" onClick={() => go("full")}><span><b>{tx("Whole film")}</b><span>{tx("Every chunk is drawn again, the sound added, and saved as a new version")}</span></span></button>
           <button className="opt" disabled={!latest} style={!latest ? { opacity: 0.45 } : undefined} onClick={() => latest && go("partial")}><span><b>{tx("Only the fixes")}</b><span>{latest ? tx("The 2-second chunks touched by {0} fixed notes", fixed) : tx("Needs a full render first")}</span></span></button>
           <button className="opt" onClick={() => go("preview")}><span><b>{tx("Quick preview")}</b><span>{tx("Half size, for a look on the phone")}</span></span></button>
+          {lang && <div className="sec" style={{ fontSize: 12, padding: "4px 8px" }}>{tx("Renders the language on screen: {0}", lang)}</div>}
           <div className="grid2" style={{ padding: 8 }}>
             <div className="field"><label>{tx("Encoder")}</label><select className="select" value={enc} onChange={(e) => setEnc(e.target.value)}><option value="auto">{tx("Automatic")}</option><option value="nvenc">NVIDIA (NVENC)</option><option value="amf">AMD (AMF)</option><option value="qsv">Intel (QSV)</option><option value="x264">{tx("CPU (x264)")}</option></select></div>
             <div className="field"><label>{tx("Size (whole film)")}</label><select className="select" value={scale} onChange={(e) => setScale(+e.target.value)}><option value={1}>%100</option><option value={0.75}>%75</option><option value={0.5}>%50</option></select></div>
@@ -888,7 +925,7 @@ function Versions({ versions, watch, setWatch }: Json) {
         {list.map((v) => (
           <div key={v.v} className="rowx" style={{ padding: "8px 0" }}>
             <b className="num" style={{ fontWeight: 500, width: 36 }}>v{v.v}</b>
-            <span className="grow sec" style={{ fontSize: 12 }}>{v.kind === "preview" ? tx("Preview") : v.mode === "partial" ? tx("{0} chunks redrawn", (v.chunks || []).length) : v.mode === "outside" ? tx("External") : tx("Full")}</span>
+            <span className="grow sec" style={{ fontSize: 12 }}>{v.lang && <span className="kbd" style={{ marginRight: 6 }}>{v.lang}</span>}{v.kind === "preview" ? tx("Preview") : v.mode === "partial" ? tx("{0} chunks redrawn", (v.chunks || []).length) : v.mode === "outside" ? tx("External") : tx("Full")}</span>
             <button className={`btn icon sm ${watch?.v === v.v ? "" : "ghost"}`} title={tx("Watch")} onClick={() => setWatch(watch?.v === v.v ? null : v)}><Play /></button>
             {v.mode === "partial" && <button className="btn sm ghost" title={tx("Watch only the changes")} onClick={() => setWatch({ ...v, only: true })}>{tx("Changes")}</button>}
             <button className="btn icon sm ghost" title={tx("Show in folder")} onClick={() => tool("reveal", { path: v.file })}><FolderOpen /></button>

@@ -8,7 +8,21 @@
 (function () {
   'use strict';
   let items = [];
-  let edits = {};
+  let edits = {};       // what the frame uses: the user's edits with the language's texts laid over them
+  let userEdits = {};   // the user's own edits (tweaks.json `edits`)
+  // Languages: tweaks.json `langs` {de: {name, texts: {elementId: text}, audio}}. ?lang=de in the page's
+  // address (renders) or KE.setLang (the app) picks one; the film's own code can read window.VH_LANG.
+  let langs = {};
+  let lang = '';
+  try { lang = new URLSearchParams(location.search).get('lang') || ''; } catch (e) { /* file:// without a query */ }
+  function relang() {
+    edits = Object.assign({}, userEdits);
+    const tr = (lang && langs[lang] && langs[lang].texts) || {};
+    for (const id of Object.keys(tr)) {
+      if (typeof tr[id] === 'string' && tr[id] !== '') edits[id] = Object.assign({}, userEdits[id] || {}, { text: tr[id] });
+    }
+    window.VH_LANG = lang || null;
+  }
   let kinds = {};   // puppet name -> 'ppet' | 'rppet' (tweaks.json puppets, kept by puppet_link)
   let MOUTH = null; // {fps, v: [0..1]}: how open a talking puppet's mouth is (audio/mouth.json, from hub_lipsync)
   const imgs = {};
@@ -17,7 +31,7 @@
     const x = new XMLHttpRequest();
     x.open('GET', 'tweaks.json?' + Math.random(), false);
     x.send();
-    if (x.status === 200 || (x.status === 0 && x.responseText)) { const tw = JSON.parse(x.responseText); items = tw.items2d || []; edits = tw.edits || {}; kinds = tw.puppets || {};
+    if (x.status === 200 || (x.status === 0 && x.responseText)) { const tw = JSON.parse(x.responseText); items = tw.items2d || []; userEdits = tw.edits || {}; kinds = tw.puppets || {}; langs = tw.langs || {};
       // asked for only when hub_lipsync made it: a missing file would show up as an error in every check
       if (tw.mouth) {
         const m = new XMLHttpRequest();
@@ -27,6 +41,7 @@
       }
     }
   } catch (e) { /* no tweaks yet */ }
+  relang();
   const load = list => Promise.all(list.filter(i => i.src && !imgs[i.src]).map(i => new Promise(ok => {
     const im = new Image(); im.onload = () => { imgs[i.src] = im; ok(); }; im.onerror = () => ok(); im.src = i.src;
   })));
@@ -422,7 +437,7 @@
       if (e.opacity !== undefined) g.globalAlpha *= e.opacity;
       const b = track(g, () => draw(p, tt), !!e.hidden);
       g.restore();
-      if (b) BOXES.push({ id, label: def.label || p.text || id, x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0, t0: def.t0, t1: def.t1, kind: p.text !== undefined ? 'text' : 'group', text: p.text, edited: !!edits[id], hidden: !!e.hidden });
+      if (b) BOXES.push({ id, label: def.label || p.text || id, x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0, t0: def.t0, t1: def.t1, kind: p.text !== undefined ? 'text' : 'group', text: p.text, src: def.text, edited: !!userEdits[id], hidden: !!e.hidden });
     },
     /** A library puppet, editable like any element (move, size, turn, retime) plus its params and states.
      *  def: {use: 'pencil', x, y (centre), scale, t0, t1, params: {...}, states: [{state, t0}] (puppet seconds
@@ -478,8 +493,12 @@
     mouth: t => mouthAt(t),
     /** 1 while the eyes are shut in a natural blink rhythm (seed: any number, one per character). */
     blink: (t, seed) => blinkAt(t, seed ?? 1),
-    setEdits(e) { edits = e || {}; },
-    getEdits() { return edits; },
+    setEdits(e) { userEdits = e || {}; relang(); },
+    getEdits() { return userEdits; },
+    /** Show the film in a language from tweaks.json `langs` ('' = the original). `texts` replaces that
+     *  language's texts without a reload (the app passes them while you translate). */
+    setLang(code, texts) { lang = code || ''; if (lang && texts) langs[lang] = Object.assign({}, langs[lang], { texts }); relang(); },
+    get lang() { return lang; },
   };
   window.KE = KE;
 
@@ -509,7 +528,7 @@
         if (isFill) {
           const acc = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
           textBox(this, txt, x, y, acc);
-          if (isFinite(acc.x0) && !BOXES.some(b => b.id === id)) BOXES.push({ id, label: String(text), x: acc.x0, y: acc.y0, w: acc.x1 - acc.x0, h: acc.y1 - acc.y0, kind: 'auto', text: txt, edited: !!edits[id], hidden: !!(e && e.hidden) });
+          if (isFinite(acc.x0) && !BOXES.some(b => b.id === id)) BOXES.push({ id, label: String(text), x: acc.x0, y: acc.y0, w: acc.x1 - acc.x0, h: acc.y1 - acc.y0, kind: 'auto', text: txt, src: String(text), edited: !!userEdits[id], hidden: !!(e && e.hidden) });
         }
         this.restore();
         return r;

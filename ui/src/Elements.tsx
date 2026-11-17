@@ -7,7 +7,7 @@ import { Json, tool } from "./api";
 import type { Layers } from "./Layers";
 
 export type Box = { id: string; label: string; x: number; y: number; w: number; h: number; t0?: number; t1?: number; kind: string; text?: string; edited?: boolean; hidden?: boolean; puppet?: string; params?: Json; states?: Json[]; pt?: number };
-export type Reg = { id: string; label: string; t0: number; t1: number; kind: string };
+export type Reg = { id: string; label: string; t0: number; t1: number; kind: string; text?: string };
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
 export function useElements(toolName: string, args: Json, getWin: () => any, redraw: () => void, paint: () => void, before?: (prev: Json) => void) {
@@ -51,7 +51,7 @@ export async function scanRegistry(w: any, dur: number, step = 0.5, part?: (r: R
     for (const b of (w.KE_BOXES || []) as Box[]) {
       const x = reg.get(b.id);
       if (x) x.t1 = Math.min(dur, t + step);
-      else reg.set(b.id, { id: b.id, label: b.label, kind: b.kind, t0: b.t0 ?? t, t1: b.t1 ?? Math.min(dur, t + step) });
+      else reg.set(b.id, { id: b.id, label: b.label, kind: b.kind, t0: b.t0 ?? t, t1: b.t1 ?? Math.min(dur, t + step), text: (b as any).src ?? (b.kind === "auto" ? b.label : undefined) });
     }
     // about one frame's worth of work at a time, then the app gets the thread back
     if (performance.now() - slice > 12) {

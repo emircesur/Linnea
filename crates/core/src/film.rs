@@ -262,7 +262,7 @@ pub fn close_pages() {
     }
 }
 
-fn page_url(cfg: &Config, f: &Film, info: &Value) -> String {
+pub fn page_url(cfg: &Config, f: &Film, info: &Value) -> String {
     let port = read_json_or(&config_dir().join("server.json"), json!({}))["port"].as_u64().filter(|_| crate::server::running()).unwrap_or(0);
     if port > 0 {
         format!("http://127.0.0.1:{port}{}", jsd(info, "url", ""))
@@ -411,7 +411,8 @@ pub fn versions(f: &Film) -> Vec<Value> {
 }
 
 fn base_name(f: &Film) -> String {
-    let latest = versions(f).last().and_then(|v| js(v, "file").map(|s| s.to_string()));
+    // a language version's file carries its code: the name comes from the latest original one
+    let latest = versions(f).iter().rev().find(|v| v["lang"].is_null()).and_then(|v| js(v, "file").map(|s| s.to_string()));
     let b = latest.as_deref().and_then(|p| Path::new(p).file_stem().map(|s| s.to_string_lossy().to_string())).map(|s| {
         let s = s.replace("_preview", "").replace("_web", "");
         match s.rfind("_v") {
@@ -488,11 +489,23 @@ pub fn render(cfg: &Config, f: &Film, a: &Value, rep: &Rep) -> Result<Value> {
     }
     let mode = jsd(a, "mode", "full").to_string();
     let preview = mode == "preview";
+    // a language renders on its own: its own chunks (a partial render compares it with its last version),
+    // its own sound when it has one, and a file named with its code
+    let lang = match js(a, "lang").filter(|l| !l.is_empty()) {
+        Some(l) => {
+            let l = crate::langs::clean(l)?;
+            if !crate::langs::langs(f).contains_key(&l) {
+                bail!("the film has no language {l}; hub_lang lists them");
+            }
+            l
+        }
+        None => String::new(),
+    };
     let (w, h, fps, dur) = (jfd(&info, "width", 1920.0) as u32, jfd(&info, "height", 1080.0) as u32, jfd(&info, "fps", 30.0), jfd(&info, "dur", 10.0));
     let ch = jfd(&info, "chunk_frames", 60.0) as usize;
     let total = (dur * fps).round() as usize;
     let nchunks = total.div_ceil(ch).max(1);
-    let rdir = f.dir.join("render");
+    let rdir = if lang.is_empty() { f.dir.join("render") } else { f.dir.join("render").join(format!("lang-{lang}")) };
     let cdir = rdir.join(if preview { "preview_chunks" } else { "chunks" });
     let man = json!({"fps": fps, "chunkFrames": ch, "chunkSec": ch as f64 / fps, "width": w, "height": h, "dur": dur, "family": "A", "renderer": "linnea"});
     let prev_v = versions(f).iter().filter_map(|x| x["v"].as_u64()).max().unwrap_or(0);
@@ -560,7 +573,7 @@ pub fn render(cfg: &Config, f: &Film, a: &Value, rep: &Rep) -> Result<Value> {
     let queue = Arc::new(Mutex::new(todo.iter().copied().collect::<std::collections::VecDeque<usize>>()));
     let done = Arc::new(AtomicUsize::new(0));
     let fail: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-    let url = page_url(cfg, f, &info);
+    let url = crate::langs::url_for(&page_url(cfg, f, &info), &lang);
     let scale = jf(a, "scale").unwrap_or(if preview { 0.5 } else { 1.0 }).clamp(0.25, 1.0);
     let enc = jsd(a, "encoder", "auto").to_string();
     let quality = if preview { 80 } else { jfd(a, "quality", 94.0) as u32 };
@@ -670,9 +683,13 @@ pub fn render(cfg: &Config, f: &Film, a: &Value, rep: &Rep) -> Result<Value> {
     }
     rep.p(0.96, "sound");
     let v = versions(f).iter().filter_map(|x| x["v"].as_u64()).max().unwrap_or(0) + 1;
-    let out = f.dir.join(format!("{}{}_v{v}.mp4", base_name(f), if preview { "_preview" } else { "" }));
+    let tag = if lang.is_empty() { String::new() } else { format!("_{lang}") };
+    let out = f.dir.join(format!("{}{tag}{}_v{v}.mp4", base_name(f), if preview { "_preview" } else { "" }));
+    let lang_audio = if lang.is_empty() { None } else { crate::langs::audio(f, &lang) };
     let mux: Vec<String> = ja(&meta(f)["render"], "mux").iter().filter_map(|x| x.as_str().map(|s| s.replace("{video}", &fwd(&video)).replace("{out}", &fwd(&out)))).collect();
-    if !mux.is_empty() {
+    if let Some(au) = lang_audio {
+        proc::ffmpeg(&ff, &["-i".into(), fwd(&video), "-i".into(), fwd(&au), "-map".into(), "0:v".into(), "-map".into(), "1:a".into(), "-c:v".into(), "copy".into(), "-c:a".into(), "aac".into(), "-b:a".into(), "192k".into(), "-shortest".into(), "-movflags".into(), "+faststart".into(), fwd(&out)], None, 0.0, &Rep::none(), "sound")?;
+    } else if !mux.is_empty() {
         let o = proc::run(proc::cmd(&ff).args(&mux).current_dir(&f.dir))?;
         if !o.ok {
             bail!("render.mux failed: {}", proc::err_tail(&o.stderr, 4));
@@ -694,7 +711,15 @@ pub fn render(cfg: &Config, f: &Film, a: &Value, rep: &Rep) -> Result<Value> {
         }
         r.into_iter().map(|(x, y)| json!([(x * 1000.0).round() / 1000.0, (y * 1000.0).round() / 1000.0])).collect()
     };
-    let entry = register(cfg, f, &out, if preview { "preview" } else { "final" }, &mode, json!(ranges), json!(if mode == "partial" { json!(changed) } else { Value::Null }), jsd(a, "_job", ""))?;
+    let mut entry = register(cfg, f, &out, if preview { "preview" } else { "final" }, &mode, json!(ranges), json!(if mode == "partial" { json!(changed) } else { Value::Null }), jsd(a, "_job", ""))?;
+    if !lang.is_empty() {
+        entry["lang"] = json!(lang);
+        let mut vs = versions(f);
+        if let Some(last) = vs.iter_mut().rev().find(|x| x["v"] == entry["v"]) {
+            last["lang"] = json!(lang);
+        }
+        write_json(&vh(f, "versions.json"), &json!(vs))?;
+    }
     rep.p(1.0, "done");
     Ok(json!({"file": fwd(&out), "version": entry["v"], "mode": mode, "chunks_rendered": todo.len(), "of": nchunks, "changedRanges": ranges}))
 }
@@ -859,6 +884,15 @@ fn t_live(c: &Ctx, a: &Value) -> Result<Value> {
         let _ = frames(&c.cfg, &f, &[d * 0.3], 0.5);
     }
     write_json(&c.cfg.state().join("focus.json"), &json!({"kind": "film", "project": f.id, "t": a["t"], "ts": now_ms(), "by": c.origin}))?;
+    // puppets the film made for itself go to the library, so the next film can use them
+    let mut harvested = Value::Null;
+    if c.cfg.get("puppets.autosave") != Some(&json!(false)) {
+        if let Ok(h) = crate::puppets::harvest(c, &json!({"film": f.id}), false) {
+            if !ja(&h, "saved").is_empty() {
+                harvested = h["saved"].clone();
+            }
+        }
+    }
     let mut next = vec![];
     if !jb(&i, "dur_known").unwrap_or(false) {
         next.push(format!("the length is a guess ({} s): save it with hub_project set={{live:{{dur:N}}}}", jfd(&i, "dur", 0.0)));
@@ -868,7 +902,11 @@ fn t_live(c: &Ctx, a: &Value) -> Result<Value> {
     } else {
         next.push("the user is watching it in Linnea now; stop here and wait for their notes (hub_notes)".into());
     }
-    Ok(json!({"film": f.id, "info": i, "checks": checks, "next": next}))
+    let mut out = json!({"film": f.id, "info": i, "checks": checks, "next": next});
+    if !harvested.is_null() {
+        out["puppets_saved_to_library"] = harvested;
+    }
+    Ok(out)
 }
 
 fn t_frame(c: &Ctx, a: &Value) -> Result<Value> {
@@ -1286,7 +1324,7 @@ pub const TOOLS: &[Tool] = &[
     Tool { name: "hub_notes", desc: "The notes the user left on frames in Linnea: time, frame, range, the chunks it touches, text, narration at that moment, and the pictures (images.crop = the drawing close up, images.annotated = the frame with the drawing, images.frame = the frame). Open the pictures with Read. Default: open notes (they are marked as with Claude).", params: &[F, ("status", "string", "open | fixed | done | all")], long: false, app_only: false, run: t_notes },
     Tool { name: "hub_note_update", desc: "Save a note's status and a short reply the user sees. After fixing: status \"fixed\" + reply. Others: open, wontfix, done.", params: &[F, ("id!", "string", "Note id"), ("status", "string", "fixed | open | wontfix | done"), ("reply", "string", "Short reply"), ("delete", "boolean", "Remove the note")], long: false, app_only: false, run: t_note_update },
     Tool { name: "hub_note_add", desc: "Leave a note on a frame (the user does this in the app; an agent may record its own open question).", params: &[F, ("t!", "number", "Second"), ("t1", "number", "End of a range"), ("text!", "string", "What is wrong"), ("drawing", "string", "PNG data URL at video size"), ("box", "array", "[x0,y0,x1,y1] of the drawing"), ("video", "string", "A rendered version: take the frame from it")], long: false, app_only: false, run: t_note_add },
-    Tool { name: "hub_render", desc: "Render the film in Linnea's queue (one render at a time, low priority). mode full, partial (only the chunks the fixed notes, `seconds` or `chunks` touch; needs one full render first) or preview (half size). Renders are the USER's step in the app; an agent gets a refusal unless the user allowed it in settings.", params: &[F, ("mode", "string", "full | partial | preview"), ("notes", "array", "Note ids (partial)"), ("seconds", "array", "[[from, to], ...] (partial)"), ("chunks", "array", "Chunk numbers (partial)"), ("workers", "number", "Browser workers, default 2"), ("encoder", "string", "auto | nvenc | amf | qsv | x264"), ("scale", "number", "Size 0.25..1")], long: true, app_only: false, run: t_render },
+    Tool { name: "hub_render", desc: "Render the film in Linnea's queue (one render at a time, low priority). mode full, partial (only the chunks the fixed notes, `seconds` or `chunks` touch; needs one full render first) or preview (half size). Renders are the USER's step in the app; an agent gets a refusal unless the user allowed it in settings.", params: &[F, ("mode", "string", "full | partial | preview"), ("notes", "array", "Note ids (partial)"), ("seconds", "array", "[[from, to], ...] (partial)"), ("chunks", "array", "Chunk numbers (partial)"), ("workers", "number", "Browser workers, default 2"), ("encoder", "string", "auto | nvenc | amf | qsv | x264"), ("scale", "number", "Size 0.25..1"), ("lang", "string", "Render this language (hub_lang) as its own file")], long: true, app_only: false, run: t_render },
     Tool { name: "hub_job", desc: "The state of a render job. wait=true waits until it ends (at most ~9 min; call again if it has not). cancel=true stops it.", params: &[("id!", "string", "Job id"), ("wait", "boolean", "Wait"), ("cancel", "boolean", "Stop it")], long: false, app_only: false, run: t_job },
     Tool { name: "hub_register_version", desc: "Register a video made outside Linnea's queue as this film's new version (with the seconds that changed).", params: &[F, ("file!", "string", "Video path"), ("changed", "array", "[[from, to], ...]"), ("kind", "string", "final | preview")], long: false, app_only: false, run: t_register },
     Tool { name: "hub_versions", desc: "The film's rendered versions with the ranges each one changed.", params: &[F], long: false, app_only: false, run: t_versions },

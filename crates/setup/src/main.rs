@@ -21,6 +21,8 @@ fn quiet(cmd: &mut Command) -> &mut Command {
     cmd
 }
 static SILENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// `--update`: started by the app's own updater. Silent, and the app starts again at the end.
+static UPDATE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 fn log(msg: &str) {
     use std::io::Write;
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(std::env::temp_dir().join("linnea-setup.log")) {
@@ -264,6 +266,15 @@ fn install() -> Result<(), String> {
         }
     }
     let b = brand();
+    if UPDATE.load(std::sync::atomic::Ordering::Relaxed) {
+        // an update from inside the app: the skill Claude Code reads follows the new version, and the app
+        // that started this comes back by itself
+        if let Some(sk) = dirs::home_dir().map(|h| h.join(".claude").join("skills").join("linnea")).filter(|d| d.is_dir()) {
+            let _ = std::fs::copy(dir.join("skill").join("linnea").join("SKILL.md"), sk.join("SKILL.md"));
+        }
+        let _ = Command::new(&app).current_dir(&dir).spawn();
+        return Ok(());
+    }
     if ask(
         "done",
         &format!("{b} {}", l("is installed", "kuruldu")),
@@ -314,7 +325,9 @@ fn uninstall() -> Result<(), String> {
 
 fn main() {
     std::panic::set_hook(Box::new(|i| log(&format!("panic: {i}"))));
-    SILENT.store(std::env::args().any(|a| a == "--silent" || a == "/S"), std::sync::atomic::Ordering::Relaxed);
+    let update = std::env::args().any(|a| a == "--update");
+    UPDATE.store(update, std::sync::atomic::Ordering::Relaxed);
+    SILENT.store(update || std::env::args().any(|a| a == "--silent" || a == "/S"), std::sync::atomic::Ordering::Relaxed);
     let un = std::env::args().any(|a| a == "--uninstall" || a == "/uninstall");
     let r = if un {
         uninstall()

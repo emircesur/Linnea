@@ -67,7 +67,16 @@ impl Page {
             "--force-device-scale-factor=1", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows",
             "--autoplay-policy=no-user-gesture-required", "--allow-file-access-from-files", "--enable-unsafe-swiftshader",
         ])
-        .arg(format!("--user-data-dir={}", profile.display()))
+        .arg(format!("--user-data-dir={}", profile.display()));
+        // Chrome will not start as root (a container, a Linux box run as root) with its sandbox on
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if std::fs::metadata("/proc/self").map(|m| m.uid() == 0).unwrap_or(false) {
+                c.arg("--no-sandbox");
+            }
+        }
+        c
         .arg(format!("--window-size={width},{height}"))
         .arg("about:blank")
         .stdout(std::process::Stdio::null())

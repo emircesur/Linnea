@@ -77,6 +77,17 @@ fix film.js -> hub_frame the same t -> hub_note_update id=... status=fixed reply
     follows the film's voice and the eyes blink by themselves (`KE.mouth(t)`, `KE.blink(t, seed)` in code). The `talker`
     puppet is a ready narrator. A state can blend in: `states: [{state, t0, blend: seconds}]`. A layer can follow a path:
     items2d `path: [[x, y], ...]` (centre points), `pathTurn`, `pathEase`.
+  - Puppets a film keeps only in its own puppets/ folder are saved to the library by `hub_live` (the result
+    lists them under `puppets_saved_to_library`); `puppet_harvest film=… all=true` also sends the ones you changed.
+- Languages (one film, many versions): draw every on-screen text through KE.text / el() with a stable id (or
+  plain fillText), then the user (or you) can translate it without touching film.js.
+  `hub_lang_scan film=… action=texts` lists every text (element id, original, when it shows);
+  `hub_lang film=… action=set lang=de name=Deutsch texts={id: "…"}` stores the translations (merged; keep
+  each about as long as the original); `audio=audio/mix.de.wav` gives that language its own sound;
+  `hub_lang_scan action=check lang=de` reports texts the translation pushed off the frame or made much wider
+  (shorten those) and the ones still untranslated. In code, `window.VH_LANG` (or `KE.lang`) is the language
+  being drawn ('' or null for the original), for anything that is not plain text. The user renders each
+  language from the app; `hub_render lang=de` (when allowed) writes `<name>_de_vN.mp4`.
 - Thumbnail Studio: `hub_thumbs`, `hub_thumb_new` (from a template), `hub_thumb_brief` (layers in words,
   positions, a prompt draft, layout.png), make the images, `hub_thumb_variant` each one, read
   `hub_thumb` notes for changes. Never put the title text in the image; the user adds it in Linnea.

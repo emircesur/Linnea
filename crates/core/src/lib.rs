@@ -10,6 +10,7 @@ pub mod extra;
 pub mod film;
 pub mod fonts;
 pub mod jobs;
+pub mod langs;
 pub mod layers;
 pub mod llm;
 pub mod manage;
@@ -28,6 +29,7 @@ pub mod styles;
 pub mod studio;
 pub mod timeline;
 pub mod tools;
+pub mod update;
 pub mod util;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

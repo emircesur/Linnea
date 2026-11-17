@@ -304,6 +304,55 @@ fn t_sync(c: &Ctx, a: &Value) -> Result<Value> {
     Ok(json!({"puppets": res}))
 }
 
+// ---------- harvest: the puppets a film made for itself go to the library ----------
+
+/// Every puppet in the film's (or reel's) own puppets/ folder that the library does not have yet is saved to
+/// it, so the next film can use it. With `all`, the ones changed in this film are sent too (as a new
+/// version). A film's copy whose name the library uses for a different puppet is left alone and reported.
+pub fn harvest(c: &Ctx, a: &Value, all: bool) -> Result<Value> {
+    let t = target(c, a)?;
+    let links = read_json_or(&t.join("links.json"), json!({}));
+    let mut saved = vec![];
+    let mut skipped = Map::new();
+    let Ok(rd) = std::fs::read_dir(&t) else { return Ok(json!({"saved": saved, "skipped": skipped})) };
+    let mut files: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.extension().map(|e| EXTS.contains(&e.to_string_lossy().as_ref())).unwrap_or(false)).collect();
+    files.sort();
+    for f in files {
+        let name = f.file_stem().unwrap_or_default().to_string_lossy().to_string();
+        let Ok(name) = clean(&name) else { continue };
+        let local = std::fs::read(&f).unwrap_or_default();
+        let lib = find(c, &name).and_then(|(p, _)| std::fs::read(p).ok());
+        let known = jsd(&links[&name], "hash", "").to_string();
+        let send = match (&lib, known.is_empty()) {
+            // new: the film made it, the library has never seen it
+            (None, _) => true,
+            (Some(l), _) if *l == local => false,
+            // linked, and only the film's copy moved on since
+            (Some(l), false) => all && same(&known, l) && !same(&known, &local),
+            (Some(_), true) => {
+                skipped.insert(name.clone(), json!("the library has a different puppet with this name"));
+                false
+            }
+        };
+        if !send {
+            continue;
+        }
+        let mut args = a.clone();
+        args["name"] = json!(name);
+        match t_save(c, &args) {
+            Ok(r) => saved.push(json!({"name": name, "version": r["version"], "new": lib.is_none()})),
+            Err(e) => {
+                skipped.insert(name, json!(e.to_string()));
+            }
+        }
+    }
+    Ok(json!({"saved": saved, "skipped": skipped}))
+}
+
+fn t_harvest(c: &Ctx, a: &Value) -> Result<Value> {
+    harvest(c, a, jb(a, "all") == Some(true))
+}
+
 // ---------- trying a puppet: every state drawn at four moments, in a real browser ----------
 
 const TRY_PAGE: &str = r#"<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#fff">
@@ -503,6 +552,14 @@ fn t_cutout(c: &Ctx, a: &Value) -> Result<Value> {
 const COMMON: (&str, &str, &str) = ("film", "string", "Film id (or project + reel for a footage reel's layer page)");
 
 pub const TOOLS: &[Tool] = &[
+    Tool {
+        name: "puppet_harvest",
+        desc: "Save the puppets a film (or reel) made for itself into the library, so other films can use them: every one in its puppets/ folder that the library lacks. all=true also sends the ones changed in this film as a new version. hub_live does this by itself unless Settings puppets.autosave is false.",
+        params: &[("film", "string", "Film id"), ("project", "string", "Project (with reel)"), ("reel", "string", "Reel"), ("all", "boolean", "Also send the puppets changed in this film")],
+        long: false,
+        app_only: false,
+        run: t_harvest,
+    },
     Tool {
         name: "puppet_try",
         desc: "Draw a puppet before saving it: every state (up to six) at four moments through it, in a real browser, as one picture, with any errors its draw function throws. Give the same fields as puppet_save (draw, size, params, states, assets), or name= a library puppet to start from it. Open the returned sheet to look at it.",

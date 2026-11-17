@@ -74,9 +74,15 @@ const changedHere = (st?: string) => st === "changed in this film" || String(st 
 export function PuppetLibrary({ film, L, t, W, H, dur, say }: { film: string; L: Layers; t: number; W: number; H: number; dur?: number; say: (s: string) => void }) {
   const [list, setList] = useState<Json[]>([]);
   const [sync, setSync] = useState<Json>({});
+  const [own, setOwn] = useState<string[]>([]);
   const [q, setQ] = useState("");
   const load = () => {
-    tool("puppet_list", { film }).then((r) => setList(r.puppets || [])).catch(() => {});
+    tool("puppet_list", { film }).then((r) => {
+      setList(r.puppets || []);
+      // puppets the film made for itself: in its folder, never linked from the library
+      const names = new Set((r.puppets || []).map((p: Json) => p.name));
+      setOwn((r.local || []).map((f: string) => f.replace(/\.r?ppet$/, "")).filter((n: string) => !names.has(n) && !(r.linked || {})[n]));
+    }).catch(() => {});
     tool("puppet_sync", { film, check: true }).then((r) => setSync(r.puppets || {})).catch(() => {});
   };
   useEffect(load, [film]);
@@ -107,6 +113,12 @@ export function PuppetLibrary({ film, L, t, W, H, dur, say }: { film: string; L:
         <label className="btn icon sm ghost" title={tx("Make a puppet from a picture")}><Upload /><input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) fromImage(f); }} /></label>
         <button className="btn icon sm ghost" title={tx("Refresh")} onClick={load}><RefreshCw /></button>
       </div>
+      {own.length > 0 && (
+        <div className="card" style={{ padding: 8, fontSize: 12 }}>
+          <div style={{ marginBottom: 6 }}>{tx("This film has {0} puppets of its own that the library does not have: {1}", own.length, own.join(", "))}</div>
+          <button className="btn sm" onClick={() => act(tool("puppet_harvest", { film }), tx("Saved to the library"))}>{tx("Save them to the library")}</button>
+        </div>
+      )}
       <input className="input" placeholder={tx("Search: pencil, bubble, arrow…")} value={q} onChange={(e) => setQ(e.target.value)} />
       {shown.map((p) => {
         const st = sync[p.name];
