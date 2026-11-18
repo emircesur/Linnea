@@ -64,15 +64,36 @@ fn layers(c: &Ctx, f: &Film) -> (Vec<Value>, Option<PathBuf>) {
     }
     if out.is_empty() {
         if let Some(m) = &mix {
+            // a mix Linnea built is not a sound of the film's own: its original is the copy kept before the
+            // first build, or nothing when the film had no sound and the mix is only the clips
             let orig = orig_of(m);
-            let src = if orig.is_file() { orig } else { m.clone() };
-            out.push(json!({"id": "mix", "kind": "mix", "file": fwd(&src)}));
+            let src = if !made_here(m) { Some(m.clone()) } else if orig.is_file() { Some(orig) } else { None };
+            if let Some(src) = src {
+                out.push(json!({"id": "mix", "kind": "mix", "file": fwd(&src)}));
+            }
         }
     }
     (out, mix)
 }
 fn orig_of(mix: &Path) -> PathBuf {
     mix.with_file_name(format!("{}.vhorig.wav", mix.file_stem().unwrap_or_default().to_string_lossy()))
+}
+fn made_of(mix: &Path) -> PathBuf {
+    mix.with_file_name(format!("{}.vhmade.json", mix.file_stem().unwrap_or_default().to_string_lossy()))
+}
+fn stamp(p: &Path) -> Value {
+    let m = std::fs::metadata(p).ok();
+    let ms = m.as_ref().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64).unwrap_or(0);
+    json!({"len": m.map(|m| m.len()).unwrap_or(0), "modified": ms})
+}
+/// Whether the mix on disk is the one Linnea built last. When someone (Claude, an editor) writes a new mix,
+/// that file is the film's own sound again. Films mixed before this was recorded count as built here when
+/// they kept an original.
+fn made_here(mix: &Path) -> bool {
+    match std::fs::read_to_string(made_of(mix)).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok()) {
+        Some(v) => v == stamp(mix),
+        None => orig_of(mix).is_file(),
+    }
 }
 
 fn t_sound(c: &Ctx, a: &Value) -> Result<Value> {
@@ -86,17 +107,54 @@ fn t_sound(c: &Ctx, a: &Value) -> Result<Value> {
         merge(&mut s, set);
         tw = save_tweaks(&f, &json!({"sound": s}))?;
     }
-    if let Some(clips) = a.get("clips").filter(|x| x.is_array()) {
+    let mut new_clips = a.get("clips").filter(|x| x.is_array()).cloned();
+    // one clip changed by its id: {id, gain, mute, at, name}, without sending the whole list
+    if let Some(one) = a.get("clip").filter(|x| x.is_object()) {
+        let id = jsd(one, "id", "");
+        let mut list = ja(&tw["audio"], "clips").to_vec();
+        let Some(c) = list.iter_mut().find(|c| jsd(c, "id", "") == id) else { bail!("no sound clip with id {id}; hub_sound lists them") };
+        for k in ["gain", "mute", "at", "name"] {
+            if let Some(v) = one.get(k).filter(|v| !v.is_null()) {
+                c[k] = v.clone();
+            }
+        }
+        new_clips = Some(json!(list));
+    }
+    if let Some(clips) = new_clips {
         let mut au = tw["audio"].clone();
         if !au.is_object() {
             au = json!({});
         }
-        au["clips"] = clips.clone();
+        // every clip keeps an id, so it can be found, muted and turned up or down on its own
+        let clips: Vec<Value> = clips.as_array().cloned().unwrap_or_default().into_iter().map(|mut c| {
+            if jsd(&c, "id", "").is_empty() {
+                c["id"] = json!(new_id("a"));
+            }
+            // what hub_sound works out (length, full path) is not stored
+            if let Some(o) = c.as_object_mut() {
+                o.remove("dur");
+                o.remove("path");
+            }
+            c
+        }).collect();
+        au["clips"] = json!(clips);
         tw = save_tweaks(&f, &json!({"audio": au}))?;
+        if jb(a, "apply") == Some(true) {
+            apply_sound(&c.cfg, c, &f)?;
+        }
     }
     let (ls, mix) = layers(c, &f);
-    Ok(json!({"layers": ls, "mix": mix.map(|m| fwd(&m)), "sound": tw["sound"], "clips": tw["audio"]["clips"],
-              "note": "sound = {levels: {layer: dB}, mute: [layer], solo: layer, removeMusic, duck: [{from, to, db}]}; clips = [{file, at, gain, name}]. hub_sound_apply rebuilds the mix the preview and renders use."}))
+    // how long each clip plays, for the timeline
+    let clips: Vec<Value> = ja(&tw["audio"], "clips").iter().map(|cl| {
+        let mut cl = cl.clone();
+        cl["path"] = json!(fwd(&f.dir.join(jsd(&cl, "file", ""))));
+        if let Some(d) = film::audio_len(&c.cfg, &f.dir.join(jsd(&cl, "file", ""))) {
+            cl["dur"] = json!((d * 100.0).round() / 100.0);
+        }
+        cl
+    }).collect();
+    Ok(json!({"layers": ls, "mix": mix.map(|m| fwd(&m)), "sound": tw["sound"], "clips": clips,
+              "note": "sound = {levels: {layer: dB}, mute: [layer], solo: layer or clip id, removeMusic, duck: [{from, to, db}]}; clips = [{id, file, at, gain (dB), mute, name}]; clip={id, gain|mute|at|name} changes one (apply=true rebuilds the mix at once). hub_sound_apply rebuilds the mix the preview and renders use."}))
 }
 
 fn db_lin(db: f64) -> f64 {
@@ -114,9 +172,10 @@ pub fn apply_sound(cfg: &Config, c: &Ctx, f: &Film) -> Result<Value> {
     if ls.is_empty() && ja(&tw["audio"], "clips").is_empty() {
         bail!("the film has no sound yet: put audio/mix.wav or stems in it, or add clips");
     }
-    // Keep the untouched original once, as VideoHub does.
+    // Keep the untouched original once, as VideoHub does; a mix someone wrote since the last build is the
+    // new original
     let orig = orig_of(&mix);
-    if mix.is_file() && !orig.is_file() {
+    if mix.is_file() && !made_here(&mix) {
         std::fs::copy(&mix, &orig)?;
     }
     let muted: Vec<String> = ja(s, "mute").iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect();
@@ -145,7 +204,7 @@ pub fn apply_sound(cfg: &Config, c: &Ctx, f: &Film) -> Result<Value> {
     }
     for cl in ja(&tw["audio"], "clips") {
         let p = f.dir.join(jsd(cl, "file", ""));
-        if !p.is_file() {
+        if !p.is_file() || jb(cl, "mute") == Some(true) || (!solo.is_empty() && solo != jsd(cl, "id", "")) {
             continue;
         }
         args.extend(["-i".into(), fwd(&p)]);
@@ -164,7 +223,8 @@ pub fn apply_sound(cfg: &Config, c: &Ctx, f: &Film) -> Result<Value> {
     args.extend(["-filter_complex".into(), g.join(";"), "-map".into(), "[out]".into(), "-t".into(), format!("{dur:.3}"), "-c:a".into(), "pcm_s16le".into(), fwd(&tmp)]);
     proc::ffmpeg(&ff, &args, Some(&f.dir), 0.0, &proc::Rep::none(), "mix")?;
     std::fs::rename(&tmp, &mix)?;
-    Ok(json!({"mix": fwd(&mix), "original": fwd(&orig), "layers": n, "note": "the preview and the next render use the rebuilt mix"}))
+    write_json(&made_of(&mix), &stamp(&mix))?;
+    Ok(json!({"mix": fwd(&mix), "original": orig.is_file().then(|| fwd(&orig)), "layers": n, "note": "the preview and the next render use the rebuilt mix"}))
 }
 
 fn t_sound_apply(c: &Ctx, a: &Value) -> Result<Value> {
@@ -174,26 +234,49 @@ fn t_sound_apply(c: &Ctx, a: &Value) -> Result<Value> {
 
 fn t_clip_add(c: &Ctx, a: &Value) -> Result<Value> {
     let f = film_of(c, a)?;
-    let src = PathBuf::from(jsd(a, "file", ""));
-    if !src.is_file() {
-        bail!("no such sound: {}", src.display());
-    }
-    let dir = f.dir.join("vhaudio");
-    std::fs::create_dir_all(&dir)?;
-    let name = src.file_name().unwrap_or_default().to_string_lossy().to_string();
-    let dst = dir.join(&name);
-    if !dst.exists() {
-        std::fs::copy(&src, &dst)?;
-    }
+    // a file in the film folder stays where it is; a library sound (sound=whoosh) or any other file is copied in
+    let (rel, name) = if let Some(id) = js(a, "sound").filter(|s| !s.is_empty()) {
+        let Some(snd) = crate::sfx::resolve(&c.cfg, id) else { bail!("no sound '{id}' in the library (`library` lists them)") };
+        let name = snd.path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let dst = f.dir.join("vhaudio").join(&name);
+        if !dst.exists() {
+            std::fs::create_dir_all(dst.parent().unwrap())?;
+            std::fs::copy(&snd.path, &dst)?;
+        }
+        (format!("vhaudio/{name}"), id.to_string())
+    } else {
+        let given = jsd(a, "file", "");
+        let inside = f.dir.join(given);
+        let src = if !given.is_empty() && inside.is_file() { inside } else { PathBuf::from(given) };
+        if !src.is_file() {
+            bail!("no such sound: {given} (give a file in the film folder, a full path, or sound=<library id>)");
+        }
+        let name = src.file_name().unwrap_or_default().to_string_lossy().to_string();
+        match src.strip_prefix(&f.dir) {
+            Ok(r) => (fwd(r), name),
+            Err(_) => {
+                let dst = f.dir.join("vhaudio").join(&name);
+                if !dst.exists() {
+                    std::fs::create_dir_all(dst.parent().unwrap())?;
+                    std::fs::copy(&src, &dst)?;
+                }
+                (format!("vhaudio/{name}"), name)
+            }
+        }
+    };
     let mut tw = tweaks(&f);
     let mut clips = ja(&tw["audio"], "clips").to_vec();
-    clips.push(json!({"id": new_id("a"), "file": format!("vhaudio/{name}"), "name": jsd(a, "name", &name), "at": jfd(a, "at", 0.0), "gain": jfd(a, "gain", 0.0)}));
+    let id = new_id("a");
+    clips.push(json!({"id": id, "file": rel, "name": jsd(a, "name", &name), "at": jfd(a, "at", 0.0), "gain": jfd(a, "gain", 0.0)}));
     if !tw["audio"].is_object() {
         tw["audio"] = json!({});
     }
     tw["audio"]["clips"] = json!(clips);
     save_tweaks(&f, &json!({"audio": tw["audio"]}))?;
-    Ok(json!({"clips": clips}))
+    if jb(a, "apply") == Some(true) {
+        apply_sound(&c.cfg, c, &f)?;
+    }
+    Ok(json!({"id": id, "clips": clips}))
 }
 
 // ---------- 2D layers ----------
@@ -437,9 +520,9 @@ const FO: (&str, &str, &str) = ("film", "string", "Film id; without it the share
 const FR: (&str, &str, &str) = ("film!", "string", "Film id");
 
 pub const TOOLS: &[Tool] = &[
-    Tool { name: "hub_sound", desc: "The film's sound layers (stems: voice, music, sfx, stems/*.wav; else its mix), the mixer settings and added clips, from tweaks.json. `set` merges mixer settings {levels: {layer: dB}, mute: [layer], solo, removeMusic, duck: [{from, to, db}]}; `clips` replaces the clip list.", params: &[FR, ("set", "object", "Mixer settings to merge"), ("clips", "array", "[{file, at, gain, name}]")], long: false, app_only: false, run: t_sound },
+    Tool { name: "hub_sound", desc: "The film's sound: its layers (stems: voice, music, sfx, stems/*.wav; else its mix), the mixer settings and the sound clips on its timeline (each with id, file, at, gain dB, mute, name, dur), from tweaks.json. `set` merges mixer settings {levels: {layer: dB}, mute: [layer], solo: layer or clip id, removeMusic, duck: [{from, to, db}]}; `clip` changes one clip by id {id, gain, mute, at, name}; `clips` replaces the list. apply=true rebuilds the mix right after.", params: &[FR, ("set", "object", "Mixer settings to merge"), ("clip", "object", "One clip's changes: {id, gain, mute, at, name}"), ("clips", "array", "[{id, file, at, gain, mute, name}]"), ("apply", "boolean", "Rebuild the mix after the change")], long: false, app_only: false, run: t_sound },
     Tool { name: "hub_sound_apply", desc: "Rebuild audio/mix.wav from the sound layers, levels, mutes, ducking and clips (the original is kept once as <mix>.vhorig.wav). The preview and renders use the new mix.", params: &[FR], long: false, app_only: false, run: t_sound_apply },
-    Tool { name: "hub_sound_clip", desc: "Add a sound to the film's timeline: the file is copied into vhaudio/ and listed in tweaks.json audio.clips. Then hub_sound_apply.", params: &[FR, ("file!", "string", "Sound file"), ("at!", "number", "Second"), ("gain", "number", "dB"), ("name", "string", "Label")], long: false, app_only: false, run: t_clip_add },
+    Tool { name: "hub_sound_clip", desc: "Put one sound on the film's timeline as its own clip, so the user can turn it up, down or off by itself in the app: sound=<library id> (whoosh, pop, ding... `library` lists them), or file= a file in the film folder (stays there) or anywhere (copied into vhaudio/). Add every effect, sting and music piece this way instead of mixing it into audio/mix.wav yourself. apply=true rebuilds the mix at once (else hub_sound_apply).", params: &[FR, ("sound", "string", "Library sound id"), ("file", "string", "Sound file (film folder or full path)"), ("at!", "number", "Second it starts"), ("gain", "number", "dB, 0 = as it is"), ("name", "string", "Label"), ("apply", "boolean", "Rebuild the mix now")], long: false, app_only: false, run: t_clip_add },
     Tool { name: "hub_2d", desc: "2D layers over the film (tweaks.json items2d): titles, labels, pictures, boxes, counters, arrows, lower thirds and library puppets, each with a time range, keyframes and an optional parent. The linnea2d.js hook draws them in the preview and in renders; install=true adds the hook to the page. `items` replaces the list; add_image copies a picture into vh2d/.", params: &[FR, ("items", "array", "The layers"), ("install", "boolean", "Add the hook to the page"), ("add_image", "string", "Picture to copy into vh2d/"), ("edits", "object", "The user's edits of elements the film draws through KE (or of plain text): {id: {dx, dy, scale, rot, opacity, hidden, t0, t1, text, color, size, keys}}")], long: false, app_only: false, run: t_2d },
     Tool { name: "hub_thumbs", desc: "The thumbnails of a film (or the shared area) and the Thumbnail Studio templates.", params: &[FO], long: false, app_only: false, run: t_thumbs },
     Tool { name: "hub_thumb_new", desc: "Start a thumbnail from a template (or blank), filling its slots.", params: &[FO, ("title!", "string", "Title"), ("template", "string", "Template id"), ("slots", "object", "Slot values"), ("format", "string", "16:9 | 9:16")], long: false, app_only: false, run: t_thumb_new },

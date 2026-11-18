@@ -746,4 +746,12 @@ export const TR: Record<string, string> = {
   "Not checked yet": "Henüz bakılmadı",
   "Check now": "Şimdi bak",
   "Look for a new version when Linnea starts": "Linnea açılırken yeni sürüme bak",
+  "Double-click: back to 0 dB": "Çift tık: 0 dB'ye dön",
+  "Turn all on": "Hepsini aç",
+  "Mute all": "Hepsini kapat",
+  "Each sound added here (by you or by Claude) gets its own volume, mute and solo. Sounds already mixed into the film's audio file can only be changed together, as a layer above.": "Buraya eklenen her ses (sizin ya da Claude'un eklediği) kendi ses düzeyi, kapatma ve solo düğmesiyle gelir. Filmin ses dosyasına zaten karıştırılmış sesler ancak birlikte, yukarıdaki katman olarak değiştirilebilir.",
+  "Starts at (s)": "Başlangıç (sn)",
+  "Listen to this sound alone": "Bu sesi tek başına dinle",
+  "Solo: only this sound in the film": "Solo: filmde yalnızca bu ses",
+  "(muted) ": "(kapalı) ",
 };

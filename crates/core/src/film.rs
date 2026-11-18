@@ -155,7 +155,7 @@ fn find_in(dir: &Path, depth: u32, pick: &dyn Fn(&Path) -> bool) -> Option<PathB
     sub.into_iter().find_map(|d| find_in(&d, depth - 1, pick))
 }
 
-fn audio_len(cfg: &Config, p: &Path) -> Option<f64> {
+pub fn audio_len(cfg: &Config, p: &Path) -> Option<f64> {
     proc::probe(&find_tool(cfg, "ffprobe")?, p).ok().map(|m| m.duration)
 }
 

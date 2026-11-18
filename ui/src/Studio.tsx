@@ -1,7 +1,7 @@
 // The edits made without code: sound layers, 2D layers over a film, and the Thumbnail Studio.
 import { tx } from "./i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Download, Image as ImageIcon, Pencil, Plus, Square, Trash2, Type, Volume2, VolumeX } from "lucide-react";
+import { Copy, Download, Headphones, Image as ImageIcon, Pencil, Play, Plus, Square, Trash2, Type, Volume2, VolumeX } from "lucide-react";
 import { CardActions, deleteItem, renameItem } from "./Manage";
 import { fileUrl, Json, tool, useLoad } from "./api";
 
@@ -9,8 +9,40 @@ const r2 = (x: number) => Math.round(x * 100) / 100;
 
 // ---------- sound layers ----------
 
-export function SoundPanel({ film, t, range, onApplied, say }: { film: string; t: number; range: [number, number] | null; onApplied: () => void; say: (s: string) => void }) {
-  const s = useLoad(() => tool("hub_sound", { film }), [film]);
+/** A volume slider in dB that shows its value while it moves and saves when it is let go. */
+function Fader({ db, disabled, onSet }: { db: number; disabled?: boolean; onSet: (db: number) => void }) {
+  const [v, setV] = useState(db);
+  useEffect(() => setV(db), [db]);
+  const done = () => { if (v !== db) onSet(v); };
+  return (
+    <div className="rowx" style={{ gap: 8 }}>
+      <input type="range" className="grow" min={-30} max={12} step={1} value={v} disabled={disabled} onChange={(e) => setV(+e.target.value)} onPointerUp={done} onKeyUp={done} onBlur={done} onDoubleClick={() => { setV(0); onSet(0); }} title={tx("Double-click: back to 0 dB")} />
+      <span className="num muted" style={{ fontSize: 12, width: 48, textAlign: "right" }}>{v > 0 ? "+" : ""}{v} dB</span>
+    </div>
+  );
+}
+
+/** Plays one sound file by itself, from the start; a second press stops it. */
+function useListen() {
+  const [on, setOn] = useState("");
+  const el = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => () => el.current?.pause(), []);
+  const toggle = (key: string, path: string, db = 0) => {
+    el.current?.pause();
+    if (on === key) { setOn(""); return; }
+    const a = new Audio(fileUrl(path));
+    a.volume = Math.max(0, Math.min(1, Math.pow(10, db / 20)));
+    a.onended = () => setOn("");
+    a.play().catch(() => setOn(""));
+    el.current = a;
+    setOn(key);
+  };
+  return { on, toggle };
+}
+
+export function SoundPanel({ film, t, range, onApplied, say, rev, sel, seek }: { film: string; t: number; range: [number, number] | null; onApplied: () => void; say: (s: string) => void; rev?: number; sel?: string; seek?: (t: number) => void }) {
+  const s = useLoad(() => tool("hub_sound", { film }), [film, rev]);
+  const listen = useListen();
   const lib = useLoad(() => tool("library"), []);
   const [busy, setBusy] = useState(false);
   const [pick, setPick] = useState("");
@@ -29,6 +61,19 @@ export function SoundPanel({ film, t, range, onApplied, say }: { film: string; t
   };
   const mute: string[] = sound.mute || [];
   const clips: Json[] = s.data?.clips || [];
+  // one clip changed by its id; the mix is rebuilt in the same call
+  const setClip = async (id: string, p: Json) => {
+    setBusy(true);
+    try {
+      await tool("hub_sound", { film, clip: { id, ...p }, apply: true });
+      s.reload();
+      onApplied();
+    } catch (e: any) {
+      say(e.message);
+    }
+    setBusy(false);
+  };
+  const allMuted = clips.length > 0 && clips.every((c) => c.mute);
   if (s.error) return <p className="err" style={{ fontSize: 12 }}>{s.error}</p>;
   return (
     <div className="stack" style={{ gap: 12 }}>
@@ -40,11 +85,10 @@ export function SoundPanel({ film, t, range, onApplied, say }: { film: string; t
           <div key={l.id} className="stack" style={{ gap: 4 }}>
             <div className="rowx">
               <b className="grow" style={{ fontWeight: 500 }}>{({ voice: tx("Sound"), music: tx("Music"), sfx: tx("Effects"), mix: tx("Mix") } as Json)[l.kind] || l.id}</b>
-              <span className="num muted" style={{ fontSize: 12, width: 52, textAlign: "right" }}>{db > 0 ? "+" : ""}{db} dB</span>
               <button className={`btn icon sm ${off ? "" : "ghost"}`} title={off ? tx("Unmute") : tx("Mute")} onClick={() => apply({ mute: off ? mute.filter((m) => m !== l.id) : [...mute, l.id] })}>{off ? <VolumeX /> : <Volume2 />}</button>
               <button className={`btn sm ${sound.solo === l.id ? "primary" : "ghost"}`} onClick={() => apply({ solo: sound.solo === l.id ? null : l.id })}>{tx("Solo")}</button>
             </div>
-            <input type="range" min={-30} max={12} step={1} defaultValue={db} disabled={busy} onPointerUp={(e) => apply({ levels: { [l.id]: +(e.target as HTMLInputElement).value } })} onKeyUp={(e) => apply({ levels: { [l.id]: +(e.target as HTMLInputElement).value } })} />
+            <Fader db={db} disabled={busy || off} onSet={(v) => apply({ levels: { [l.id]: v } })} />
           </div>
         );
       })}
@@ -65,8 +109,11 @@ export function SoundPanel({ film, t, range, onApplied, say }: { film: string; t
         ))}
         {!sound.duck?.length && <span className="muted" style={{ fontSize: 12 }}>{tx("Music (or the single mix) is turned down in these ranges")}</span>}
       </div>
-      <div className="stack" style={{ gap: 4 }}>
-        <h2>{tx("Clips")}</h2>
+      <div className="stack" style={{ gap: 8 }}>
+        <div className="rowx">
+          <h2 className="grow">{tx("Sounds")}{clips.length ? <span className="muted num" style={{ marginLeft: 6, fontWeight: 400 }}>{clips.length}</span> : null}</h2>
+          {clips.length > 1 && <button className="btn sm ghost" disabled={busy} onClick={() => apply(undefined, clips.map((c) => ({ ...c, mute: !allMuted })))}>{allMuted ? <Volume2 /> : <VolumeX />}{allMuted ? tx("Turn all on") : tx("Mute all")}</button>}
+        </div>
         <div className="rowx">
           <select className="select grow" value={pick} onChange={(e) => setPick(e.target.value)}>
             <option value="">{tx("Sound from the library")}</option>
@@ -75,14 +122,25 @@ export function SoundPanel({ film, t, range, onApplied, say }: { film: string; t
           <button className="btn sm" disabled={!pick || busy} onClick={async () => { await tool("hub_sound_clip", { film, file: pick, at: r2(t) }); apply(); }}><Plus />{r2(t)} {tx("s")}</button>
           <button className="btn sm ghost" disabled={busy} title={tx("From file")} onClick={async () => { const r = await tool("pick_file"); if (r.path) { await tool("hub_sound_clip", { film, file: r.path, at: r2(t) }); apply(); } }}>{tx("File")}</button>
         </div>
-        {clips.map((c, i) => (
-          <div key={c.id || i} className="rowx" style={{ fontSize: 12 }}>
-            <span className="grow" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-            <input className="input num" style={{ width: 64, height: 28 }} type="number" step={0.1} defaultValue={c.at} onBlur={(e) => +e.target.value !== c.at && apply(undefined, clips.map((x, k) => (k === i ? { ...x, at: +e.target.value } : x)))} />
-            <input className="input num" style={{ width: 56, height: 28 }} type="number" step={1} defaultValue={c.gain} title="dB" onBlur={(e) => +e.target.value !== c.gain && apply(undefined, clips.map((x, k) => (k === i ? { ...x, gain: +e.target.value } : x)))} />
-            <button className="btn icon sm ghost" onClick={() => apply(undefined, clips.filter((_, k) => k !== i))}><Trash2 /></button>
-          </div>
-        ))}
+        {!clips.length && <span className="muted" style={{ fontSize: 12, lineHeight: "18px" }}>{tx("Each sound added here (by you or by Claude) gets its own volume, mute and solo. Sounds already mixed into the film's audio file can only be changed together, as a layer above.")}</span>}
+        {clips.map((c, i) => {
+          const id = c.id || `c${i}`;
+          const solo = sound.solo === c.id;
+          const here = t >= c.at && t < c.at + (c.dur || 1);
+          return (
+            <div key={id} className="stack" style={{ gap: 2, padding: "6px 8px", margin: "0 -8px", borderRadius: 8, background: sel === id ? "var(--bg-2, rgba(127,167,217,.12))" : undefined, opacity: c.mute ? 0.55 : 1 }}>
+              <div className="rowx" style={{ fontSize: 12, gap: 4 }}>
+                <button className="grow" onClick={() => seek?.(c.at)} title={tx("Go to {0} s", r2(c.at))} style={{ textAlign: "left", background: "none", border: 0, padding: 0, cursor: "pointer", color: here ? "var(--accent)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>{c.name || c.file}</button>
+                <input className="input num" style={{ width: 62, height: 26 }} type="number" step={0.1} defaultValue={c.at} key={`${id}@${c.at}`} title={tx("Starts at (s)")} onBlur={(e) => +e.target.value !== c.at && setClip(c.id, { at: r2(+e.target.value) })} />
+                <button className={`btn icon sm ${listen.on === id ? "" : "ghost"}`} title={tx("Listen to this sound alone")} onClick={() => listen.toggle(id, c.path, c.gain || 0)}>{listen.on === id ? <Square /> : <Play />}</button>
+                <button className={`btn icon sm ${c.mute ? "" : "ghost"}`} disabled={busy} title={c.mute ? tx("Unmute") : tx("Mute")} onClick={() => setClip(c.id, { mute: !c.mute })}>{c.mute ? <VolumeX /> : <Volume2 />}</button>
+                <button className={`btn icon sm ${solo ? "primary" : "ghost"}`} disabled={busy} title={tx("Solo: only this sound in the film")} onClick={() => apply({ solo: solo ? null : c.id })}><Headphones /></button>
+                <button className="btn icon sm ghost" disabled={busy} title={tx("Remove")} onClick={() => apply(undefined, clips.filter((_, k) => k !== i))}><Trash2 /></button>
+              </div>
+              <Fader db={c.gain || 0} disabled={busy || c.mute} onSet={(v) => setClip(c.id, { gain: v })} />
+            </div>
+          );
+        })}
       </div>
       <p className="muted" style={{ fontSize: 12, lineHeight: "18px" }}>{tx("Every change rebuilds")} <span className="num">audio/mix.wav</span> {tx("and keeps the original as")} <span className="num">mix.vhorig.wav</span> {tx("— the preview and renders use the new mix.")}</p>
     </div>

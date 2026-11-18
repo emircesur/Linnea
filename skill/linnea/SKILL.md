@@ -44,6 +44,11 @@ fix film.js -> hub_frame the same t -> hub_note_update id=... status=fixed reply
 - `hub_sound` / `hub_sound_apply` / `hub_sound_clip`: sound layers (stems voice, music, sfx, stems/*.wav, else
   the mix), levels in dB, mute, solo, removeMusic, ducking ranges, clips on the timeline (copied into
   vhaudio/). Apply rebuilds audio/mix.wav; the original stays as mix.vhorig.wav.
+- Sounds you add to a film: put EACH effect, sting, riser and music piece on the timeline as its own clip
+  (`hub_sound_clip film=… sound=whoosh at=2.4` for a library sound, `file=audio/pop.wav` for one in the film
+  folder; `gain` in dB, `apply=true` rebuilds the mix). Never bake them into audio/mix.wav yourself: the user
+  turns each clip up, down, off or solo in the Sound tab, and a sound inside the mix can only change with it.
+  `hub_sound` lists the clips with their ids; `hub_sound clip={id, gain, mute, at} apply=true` changes one.
 - `hub_2d`: 2D layers over the film (`items2d`: text, image, rect with a time range, px position and size,
   colours, fade). The linnea2d.js hook (in the template; `install=true` adds it) draws them after renderOut
   in the preview and in renders. Good for titles, labels and stickers the user wants to move by hand.

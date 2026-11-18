@@ -433,10 +433,11 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
     },
     {
       key: "sound", label: tx("Sound clips"), color: "#7fa7d9", sel: selTrack,
-      items: clips.map((c, i) => ({ id: `c${i}`, s: c.at, e: c.at + 1, label: c.name || c.file })),
-      onSelect: setSelTrack,
-      onChange: (cid, s) => saveClips(clips.map((c, i) => (`c${i}` === cid ? { ...c, at: s } : c))),
-      onDelete: (cid) => { saveClips(clips.filter((_, i) => `c${i}` !== cid)); setSelTrack(""); },
+      // each sound at its real length; a muted one says so, and selecting one opens it in the Sound tab
+      items: clips.map((c, i) => ({ id: `c:${c.id || i}`, s: c.at, e: c.at + Math.max(0.3, c.dur || 1), label: (c.mute ? tx("(muted) ") : "") + (c.name || c.file) })),
+      onSelect: (cid) => { setSelTrack(cid); setSide("sound"); },
+      onChange: (cid, s) => saveClips(clips.map((c, i) => (`c:${c.id || i}` === cid ? { ...c, at: Math.round(s * 100) / 100 } : c))),
+      onDelete: (cid) => { saveClips(clips.filter((c, i) => `c:${c.id || i}` !== cid)); setSelTrack(""); },
     },
   ];
 
@@ -529,7 +530,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 24, overflow: "auto", flex: 1 }}>
         {side === "langs" && <LangsPanel film={id} reg={reg} scanning={scanning} t={t} seek={(x) => { setPlaying(false); seek(x); }} say={say} view={viewLang} setView={setViewLang} run={run} copy={copy} />}
         {side === "ai" && <FilmAssistant id={id} dir={info.dir} t={t} fps={FPS} sel={selEl} run={run} busy={!!busy} say={say} />}
-        {side === "sound" && <SoundPanel film={id} t={t} range={range} say={say} onApplied={() => { setAudioV(Date.now()); load(); }} />}
+        {side === "sound" && <SoundPanel film={id} t={t} range={range} say={say} rev={audioV} sel={selTrack.startsWith("c:") ? selTrack.slice(2) : ""} seek={(x) => { setPlaying(false); seek(x); }} onApplied={() => { setAudioV(Date.now()); load(); }} />}
         {side === "layers" && selEl && <ElementPanel id={selEl} box={boxes.find((b) => b.id === selEl)} reg={reg.find((r) => r.id === selEl)} E={E} t={t} close={() => setSelEl("")} />}
         {side === "layers" && selEl && (() => {
           const b = boxes.find((x) => x.id === selEl);
