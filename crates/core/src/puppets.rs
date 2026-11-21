@@ -160,7 +160,7 @@ fn t_save(c: &Ctx, a: &Value) -> Result<Value> {
         v["version"] = json!(0);
         v["label"] = json!(name);
     }
-    for k in ["label", "desc", "tags", "size", "pivot", "params", "states", "initial", "assets", "draw", "example"] {
+    for k in ["label", "desc", "tags", "size", "pivot", "params", "states", "initial", "assets", "draw", "example", "rig"] {
         if let Some(x) = a.get(k).filter(|x| !x.is_null()) {
             v[k] = x.clone();
         }

@@ -4,6 +4,7 @@ import { tx } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Diamond, Eye, EyeOff, RotateCcw, Trash2 } from "lucide-react";
 import { Json, tool } from "./api";
+import { dropOnFrame } from "./Layers";
 import type { Layers } from "./Layers";
 
 export type Box = { id: string; label: string; x: number; y: number; w: number; h: number; t0?: number; t1?: number; kind: string; text?: string; edited?: boolean; hidden?: boolean; puppet?: string; params?: Json; states?: Json[]; pt?: number };
@@ -102,15 +103,11 @@ export function ElementOverlay({ boxes, E, sel, setSel, t, W, H, L }: { boxes: B
     window.addEventListener("pointermove", mv);
     window.addEventListener("pointerup", up);
   };
-  const drop = async (e: React.DragEvent) => {
+  const drop = (e: React.DragEvent) => {
     e.preventDefault();
-    const f = e.dataTransfer.files?.[0];
-    if (!f || !L || !f.type.startsWith("image/")) return;
+    if (!L) return;
     const r = ref.current!.getBoundingClientRect();
-    const px = ((e.clientX - r.left) / r.width) * W, py = ((e.clientY - r.top) / r.height) * H;
-    const src = await L.upload(f);
-    const w = W * 0.4;
-    L.update([...L.items, { id: "l" + Date.now().toString(36), kind: "image", src, t0: r2(t), t1: r2(t + 3), x: Math.round(px - w / 2), y: Math.round(py - w / 2), w, h: w, opacity: 1, fade: 0.25 }]);
+    dropOnFrame(e, ((e.clientX - r.left) / r.width) * W, ((e.clientY - r.top) / r.height) * H, L, t, W, H);
   };
   const lw = W / 400, hs = W / 60;
   return (

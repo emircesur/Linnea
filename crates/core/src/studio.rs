@@ -113,7 +113,7 @@ fn t_sound(c: &Ctx, a: &Value) -> Result<Value> {
         let id = jsd(one, "id", "");
         let mut list = ja(&tw["audio"], "clips").to_vec();
         let Some(c) = list.iter_mut().find(|c| jsd(c, "id", "") == id) else { bail!("no sound clip with id {id}; hub_sound lists them") };
-        for k in ["gain", "mute", "at", "name"] {
+        for k in ["gain", "mute", "at", "name", "from", "len", "speed"] {
             if let Some(v) = one.get(k).filter(|v| !v.is_null()) {
                 c[k] = v.clone();
             }
@@ -148,13 +148,17 @@ fn t_sound(c: &Ctx, a: &Value) -> Result<Value> {
     let clips: Vec<Value> = ja(&tw["audio"], "clips").iter().map(|cl| {
         let mut cl = cl.clone();
         cl["path"] = json!(fwd(&f.dir.join(jsd(&cl, "file", ""))));
-        if let Some(d) = film::audio_len(&c.cfg, &f.dir.join(jsd(&cl, "file", ""))) {
-            cl["dur"] = json!((d * 100.0).round() / 100.0);
+        // a trimmed clip (from, len: seconds of the file) plays len / speed seconds
+        let sp = jfd(&cl, "speed", 1.0).max(0.05);
+        if let Some(l) = jf(&cl, "len") {
+            cl["dur"] = json!((l / sp * 100.0).round() / 100.0);
+        } else if let Some(d) = film::audio_len(&c.cfg, &f.dir.join(jsd(&cl, "file", ""))) {
+            cl["dur"] = json!(((d - jfd(&cl, "from", 0.0)).max(0.0) / sp * 100.0).round() / 100.0);
         }
         cl
     }).collect();
     Ok(json!({"layers": ls, "mix": mix.map(|m| fwd(&m)), "sound": tw["sound"], "clips": clips,
-              "note": "sound = {levels: {layer: dB}, mute: [layer], solo: layer or clip id, removeMusic, duck: [{from, to, db}]}; clips = [{id, file, at, gain (dB), mute, name}]; clip={id, gain|mute|at|name} changes one (apply=true rebuilds the mix at once). hub_sound_apply rebuilds the mix the preview and renders use."}))
+              "note": "sound = {levels: {layer: dB}, mute: [layer], solo: layer or clip id, removeMusic, duck: [{from, to, db}]}; clips = [{id, file, at, gain (dB), mute, name, from (s into the file), len (s of the file), speed (0.25..4), link (the video layer it belongs to)}]; clip={id, gain|mute|at|name|from|len|speed} changes one (apply=true rebuilds the mix at once). hub_sound_apply rebuilds the mix the preview and renders use."}))
 }
 
 fn db_lin(db: f64) -> f64 {
@@ -207,8 +211,30 @@ pub fn apply_sound(cfg: &Config, c: &Ctx, f: &Film) -> Result<Value> {
         if !p.is_file() || jb(cl, "mute") == Some(true) || (!solo.is_empty() && solo != jsd(cl, "id", "")) {
             continue;
         }
+        // a video without a sound track has nothing to give the mix
+        if let Some(fp) = find_tool(&c.cfg, "ffprobe") {
+            if proc::probe(&fp, &p).map(|m| !m.has_audio).unwrap_or(false) {
+                continue;
+            }
+        }
         args.extend(["-i".into(), fwd(&p)]);
-        g.push(format!("[{n}:a]aformat=sample_rates=48000:channel_layouts=stereo,volume={:.4},adelay={}:all=1[l{n}]", db_lin(jfd(cl, "gain", 0.0)), (jfd(cl, "at", 0.0) * 1000.0).round() as i64));
+        // trimmed (from, len: seconds of the file) and sped up or slowed down (atempo takes 0.5..2 per step)
+        let mut pre = String::new();
+        let from = jfd(cl, "from", 0.0).max(0.0);
+        if from > 0.0 || jf(cl, "len").is_some() {
+            pre.push_str(&format!("atrim=start={from:.4}"));
+            if let Some(l) = jf(cl, "len") {
+                pre.push_str(&format!(":duration={:.4}", l.max(0.01)));
+            }
+            pre.push_str(",asetpts=PTS-STARTPTS,");
+        }
+        let mut sp = jfd(cl, "speed", 1.0).clamp(0.25, 4.0);
+        while (sp - 1.0).abs() > 1e-3 {
+            let step = sp.clamp(0.5, 2.0);
+            pre.push_str(&format!("atempo={step:.4},"));
+            sp /= step;
+        }
+        g.push(format!("[{n}:a]{pre}aformat=sample_rates=48000:channel_layouts=stereo,volume={:.4},adelay={}:all=1[l{n}]", db_lin(jfd(cl, "gain", 0.0)), (jfd(cl, "at", 0.0) * 1000.0).round() as i64));
         labels.push(format!("[l{n}]"));
         n += 1;
     }
@@ -345,8 +371,8 @@ fn t_2d(c: &Ctx, a: &Value) -> Result<Value> {
         return Ok(json!({"src": format!("vh2d/{name}")}));
     }
     Ok(json!({"items": tweaks(&f)["items2d"].as_array().cloned().unwrap_or_default(), "edits": tweaks(&f)["edits"], "installed": hook_installed(&f, jsd(&info, "page", "index.html")),
-              "size": [info["width"], info["height"]],
-              "note": "items2d = [{id, kind: text|image|rect|counter|marker|arrow|phone|lower|progress|puppet, t0, t1, x, y, w, h (px), rot, scale, opacity, fade, anim: fade|slide-up|slide-left|pop, parent, hidden, keys: [{t, x, y, w, h, rot, scale, opacity, ease: linear|in|out|inOut|back}], text, sub, font, weight, size, color, stroke, bg, radius, align, from, to, prefix, suffix, src}]. A puppet layer: {kind: 'puppet', puppet: name (puppet_link it first), params: {..}, states: [{state, t0 (seconds from the layer's t0)}]}. `items` replaces the whole list: read it, change it, send it back. Drawn over the film by linnea2d.js in the preview and in renders."}))
+              "size": [info["width"], info["height"]], "url": info["url"],
+              "note": "items2d = [{id, label, kind: text|image|rect|ellipse|counter|marker|arrow|phone|lower|progress|puppet, t0, t1, x, y, w, h (px), rot, scale, opacity, fade, anim / animOut: none|fade|slide-up|slide-down|slide-left|slide-right|pop|zoom|spin|blur|wipe, parent, hidden, locked, keys: [{t, x?, y?, w?, h?, rot?, scale?, opacity?, any style number (size, blur, shadowBlur, shadowX, shadowY, strokeWidth, borderWidth, radius, spacing, value, gradAngle, lineHeight) or colour (color, bg, bg2, stroke, shadow, border, accent, subColor), ease: linear|in|out|inOut|back|sine|expo|elastic|bounce|hold, bez: [x1, y1, x2, y2] (own curve)}], text, sub, font, weight, size, italic, align, spacing, lineHeight, upper, typing: chars|words (over reveal s), color, stroke, strokeWidth, bg, bg2 + gradAngle (gradient), radius, border, borderWidth, shadow, shadowBlur, shadowX, shadowY, blur, blend, fx, fy, fit: cover|contain, from, to, prefix, suffix, decimals, src}]. A video layer: {kind: 'video', src (add_image copies the file into vh2d/), in (s into the file), speed, loop, fit, sound (true: a linked sound clip plays its audio in the mix), gain (dB)}; it shows the exact frame in renders. A group: {kind: 'group', x, y, w, h, t0, t1} with layers whose parent is its id: it moves, turns, scales and fades them, and hiding it hides them. A puppet layer: {kind: 'puppet', puppet: name (puppet_link it first), params: {..}, states: [{state, t0 (seconds from the layer's t0), blend}], speed, pkeys: [{t (film s), p: {param: number}, ease}]}. `items` replaces the whole list: read it, change it, send it back. Drawn over the film by linnea2d.js in the preview and in renders."}))
 }
 
 // ---------- thumbnails ----------

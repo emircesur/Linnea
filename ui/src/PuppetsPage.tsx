@@ -5,6 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import { fileUrl, Json, runJob, tool, useLoad } from "./api";
 import { PuppetFields, puppetFromImage, puppetName } from "./Puppets";
+import { RigEditor } from "./RigEditor";
+import { puppetFromFrames } from "./Rig";
+import { Bone as BoneIcon, Images } from "lucide-react";
 
 const PREVIEW_DOC = [
   "<!doctype html><html><body style=\"margin:0;background:transparent;display:grid;place-items:center;height:100vh;overflow:hidden\">",
@@ -29,7 +32,7 @@ export function PuppetPreview({ def, state, params, style }: { def: Json | null;
   const ref = useRef<HTMLIFrameElement>(null);
   const send = () => ref.current?.contentWindow?.postMessage({ def, state: state || "", params: params || {} }, "*");
   useEffect(send, [def, state, JSON.stringify(params || {})]);
-  return <iframe ref={ref} title="kukla" sandbox="allow-scripts" srcDoc={PREVIEW_DOC} onLoad={send} style={{ border: 0, width: "100%", aspectRatio: "1", display: "block", background: "repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 16px 16px", borderRadius: 8, ...style }} />;
+  return <iframe ref={ref} title="kukla" sandbox="allow-scripts" srcDoc={PREVIEW_DOC} onLoad={send} style={{ border: 0, width: "100%", aspectRatio: "1", display: "block", colorScheme: "normal", background: "repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 16px 16px", borderRadius: 8, ...style }} />;
 }
 
 export function PuppetsPage({ say }: { say: (s: string) => void }) {
@@ -42,6 +45,7 @@ export function PuppetsPage({ say }: { say: (s: string) => void }) {
   const [film, setFilm] = useState("");
   const [cut, setCut] = useState(false);
   const [tryParams, setTryParams] = useState<Json>({});
+  const [rig, setRig] = useState<Json | null>(null);
   useEffect(() => setTryParams({}), [open]);
   // the puppet maker: words in, a tried and saved puppet out
   const settings = useLoad(() => tool("settings"), []);
@@ -112,6 +116,7 @@ export function PuppetsPage({ say }: { say: (s: string) => void }) {
   const def = sel ? defs[sel.name] : null;
   return (
     <div className="page">
+      {rig && <RigEditor start={rig.rig ? rig as any : undefined} taken={list.map((p) => p.name)} close={() => setRig(null)} say={say} saved={(n) => { setRig(null); load().then(() => { setOpen(n); setState(""); }); }} />}
       <div className="wrap">
         <div className="page-head">
           <h1 className="grow">{tx("Puppets")}</h1>
@@ -119,6 +124,8 @@ export function PuppetsPage({ say }: { say: (s: string) => void }) {
           <label className="btn"><Upload />{tx("Puppet from picture")}<input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) fromImage(f); }} /></label>
           <label className="rowx sec" style={{ fontSize: 12, gap: 4 }} title={tx("The local person matte model removes the picture's background")}><input type="checkbox" checked={cut} onChange={(e) => setCut(e.target.checked)} />{tx("Remove background")}</label>
           <button className={`btn ${maker.open && !maker.name ? "primary" : ""}`} onClick={() => setMaker(maker.open && !maker.name ? { open: false } : { open: true })}><Sparkles />{tx("Puppet with AI")}</button>
+          <button className="btn" onClick={() => setRig({})} title={tx("Build a puppet from bones and pose it")}><BoneIcon />{tx("Puppet from bones")}</button>
+          <label className="btn" title={tx("Pick several pictures: they play in turn, like a flip book")}><Images />{tx("Puppet from frames")}<input type="file" accept="image/*" multiple hidden onChange={(e) => { const fs = [...(e.target.files || [])]; e.target.value = ""; if (fs.length) puppetFromFrames(fs, list.map((p) => p.name)).then((n) => { say(tx("\"{0}\" puppet saved", n)); load(); }).catch((er) => say(er.message)); }} /></label>
         </div>
         <p className="sec" style={{ marginBottom: 16, maxWidth: 760 }}>{tx("Reusable drawings made by Claude and by you.")} <b>.ppet</b> {tx("is one drawing,")} <b>.rppet</b> {tx("is a rich puppet with named animations (a pencil: stands still, then writes). Linked into a film, it is copied into the film's")} <span className="num">puppets/</span> {tx("folder; a newer library version reaches the film with \"Get\".")}</p>
         {maker.open && (
@@ -151,7 +158,7 @@ export function PuppetsPage({ say }: { say: (s: string) => void }) {
           </div>
           {sel && (
             <div className="card stack" style={{ padding: 16, gap: 12, position: "sticky", top: 0 }}>
-              <div className="rowx"><h2 className="grow">{sel.label || sel.name}</h2><button className="btn sm ghost" onClick={() => setOpen("")}>{tx("Close")}</button></div>
+              <div className="rowx"><h2 className="grow">{sel.label || sel.name}</h2>{def?.rig && <button className="btn sm" onClick={() => setRig({ name: sel.name, label: sel.label || sel.name, rig: def.rig, assets: def.assets })}><BoneIcon />{tx("Edit bones")}</button>}<button className="btn sm ghost" onClick={() => setOpen("")}>{tx("Close")}</button></div>
               <PuppetPreview def={def} state={state} params={tryParams} />
               {sel.states?.length > 0 && (
                 <div className="seg" style={{ flexWrap: "wrap" }}>

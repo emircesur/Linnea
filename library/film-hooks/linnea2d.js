@@ -4,7 +4,18 @@
 // A layer: {id, kind, t0, t1, x, y, w, h, rot, scale, opacity, fade, anim, parent, keys: [{t, x, y, w, h, rot,
 // scale, opacity, ease}], ...kind fields}. Keys animate any of those properties between their times (a rig:
 // a child with `parent` moves and turns with it). Kinds: text, image, rect, counter, marker, arrow, phone,
-// lower (lower third), progress.
+// lower (lower third), progress, ellipse, puppet, video ({src, in, speed, loop, fit}), group (moves, turns,
+// scales and fades the layers whose parent it is; hiding it or its time range hides them too).
+// Keys can also animate style numbers (size, blur, shadowBlur, shadowX, shadowY, strokeWidth, borderWidth,
+// radius, spacing, value, gradAngle, lineHeight) and colours (color, bg, bg2, stroke, shadow, border, accent,
+// subColor). A key's ease (linear|in|out|inOut|back|sine|expo|elastic|bounce|hold) or its own `bez: [x1, y1,
+// x2, y2]` shapes the way into it.
+// Look: anim (the way in) and animOut (the way out): none|fade|slide-up|slide-down|slide-left|slide-right|pop|
+// zoom|spin|blur|wipe, over `fade` seconds; blend (a canvas composite mode), shadow (colour) with shadowBlur,
+// shadowX, shadowY; blur (px); fx / fy (mirror); border + borderWidth; bg2 + gradAngle (a gradient fill).
+// Text: font, size, weight, italic, align, spacing (px), lineHeight, upper, stroke, strokeWidth, typing
+// ('chars' | 'words', revealed over `reveal` s). Image: fit (fill|cover|contain), radius. Puppet: speed,
+// pkeys [{t, p: {param: value}, ease}] animate its numeric params over the film's time.
 (function () {
   'use strict';
   let items = [];
@@ -42,7 +53,7 @@
     }
   } catch (e) { /* no tweaks yet */ }
   relang();
-  const load = list => Promise.all(list.filter(i => i.src && !imgs[i.src]).map(i => new Promise(ok => {
+  const load = list => Promise.all(list.filter(i => i.src && i.kind !== 'video' && !imgs[i.src]).map(i => new Promise(ok => {
     const im = new Image(); im.onload = () => { imgs[i.src] = im; ok(); }; im.onerror = () => ok(); im.src = i.src;
   })));
   let pend = 0;   // puppet pictures still loading
@@ -56,7 +67,81 @@
     in: k => k * k * k,
     inOut: k => k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2,
     back: k => { const c = 1.7; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); },
+    sine: k => -(Math.cos(Math.PI * k) - 1) / 2,
+    expo: k => (k >= 1 ? 1 : 1 - Math.pow(2, -10 * k)),
+    elastic: k => (k <= 0 ? 0 : k >= 1 ? 1 : Math.pow(2, -10 * k) * Math.sin((k * 10 - 0.75) * (2 * Math.PI) / 3) + 1),
+    bounce: k => { const n = 7.5625, d = 2.75; if (k < 1 / d) return n * k * k; if (k < 2 / d) return n * (k -= 1.5 / d) * k + 0.75; if (k < 2.5 / d) return n * (k -= 2.25 / d) * k + 0.9375; return n * (k -= 2.625 / d) * k + 0.984375; },
+    hold: k => (k >= 1 ? 1 : 0),
   };
+  // a custom curve: cubic Bezier (x1, y1, x2, y2), as CSS cubic-bezier()
+  const BEZ = {};
+  function bezier(b) {
+    const key = b.join(','); if (BEZ[key]) return BEZ[key];
+    const [x1, y1, x2, y2] = b, A = (a, c) => 1 - 3 * c + 3 * a, B = (a, c) => 3 * c - 6 * a, C = a => 3 * a;
+    const X = u => ((A(x1, x2) * u + B(x1, x2)) * u + C(x1)) * u, Y = u => ((A(y1, y2) * u + B(y1, y2)) * u + C(y1)) * u, D = u => (3 * A(x1, x2) * u + 2 * B(x1, x2)) * u + C(x1);
+    return (BEZ[key] = x => {
+      if (x <= 0) return 0; if (x >= 1) return 1;
+      let u = x;
+      for (let i = 0; i < 8; i++) { const e = X(u) - x; if (Math.abs(e) < 1e-6) break; const d = D(u); if (Math.abs(d) < 1e-6) break; u -= e / d; }
+      if (!(u >= 0 && u <= 1) || Math.abs(X(u) - x) > 1e-4) { let lo = 0, hi = 1; u = x; for (let i = 0; i < 40; i++) { const v = X(u); if (Math.abs(v - x) < 1e-6) break; if (v < x) lo = u; else hi = u; u = (lo + hi) / 2; } }
+      return Y(u);
+    });
+  }
+  // the curve into key b (its ease, or its own Bezier `bez`)
+  const curve = b => (Array.isArray(b.bez) && b.bez.length === 4 ? bezier(b.bez) : EASE[b.ease || 'inOut'] || EASE.inOut);
+  // colours between keys: #rgb, #rrggbb, #rrggbbaa, rgb(), rgba(); anything else changes at the key
+  function rgba(c) {
+    if (typeof c !== 'string') return null;
+    c = c.trim();
+    if (c[0] === '#') {
+      let h = c.slice(1); if (h.length === 3 || h.length === 4) h = h.split('').map(x => x + x).join('');
+      const n = parseInt(h, 16); if (isNaN(n)) return null;
+      if (h.length === 6) return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1];
+      if (h.length === 8) return [(n >>> 24) & 255, (n >> 16) & 255, (n >> 8) & 255, (n & 255) / 255];
+      return null;
+    }
+    const m = c.match(/^rgba?\(([^)]+)\)$/i);
+    if (m) { const p = m[1].split(/[\s,/]+/).filter(Boolean).map(parseFloat); return p.length >= 3 ? [p[0], p[1], p[2], p[3] ?? 1] : null; }
+    return null;
+  }
+  function mixColor(a, b, k) {
+    const A = rgba(a), B = rgba(b);
+    if (!A || !B) return k < 1 ? a : b;
+    const v = i => A[i] + (B[i] - A[i]) * k;
+    return `rgba(${Math.round(v(0))},${Math.round(v(1))},${Math.round(v(2))},${Math.round(v(3) * 1000) / 1000})`;
+  }
+  // style values keys can animate besides the place: numbers and colours
+  const STYLE_NUM = ['size', 'blur', 'shadowBlur', 'shadowX', 'shadowY', 'strokeWidth', 'borderWidth', 'radius', 'spacing', 'value', 'gradAngle', 'lineHeight'];
+  const COLORS = ['color', 'bg', 'bg2', 'stroke', 'shadow', 'border', 'accent', 'subColor'];
+  function keyed(ks, p, t, color) {
+    const kk = ks.filter(k => k[p] !== undefined);
+    if (!kk.length) return undefined;
+    if (t <= kk[0].t) return kk[0][p];
+    if (t >= kk[kk.length - 1].t) return kk[kk.length - 1][p];
+    for (let i = 0; i < kk.length - 1; i++) {
+      const a = kk[i], b = kk[i + 1];
+      if (t >= a.t && t <= b.t) {
+        const k = curve(b)((t - a.t) / Math.max(1e-6, b.t - a.t));
+        return color ? mixColor(a[p], b[p], k) : typeof a[p] === 'number' && typeof b[p] === 'number' ? a[p] + (b[p] - a[p]) * k : (k < 1 ? a[p] : b[p]);
+      }
+    }
+  }
+  /** The layer with its keyed style values at t (the layer itself when nothing of its look is keyed). */
+  function styled(it, t) {
+    if (!it.keys || !it.keys.length) return it;
+    const ks = it.keys.slice().sort((a, b) => a.t - b.t);
+    let out = null;
+    for (const p of STYLE_NUM) { const v = keyed(ks, p, t, false); if (v !== undefined) (out = out || Object.assign({}, it))[p] = v; }
+    for (const p of COLORS) { const v = keyed(ks, p, t, true); if (v !== undefined) (out = out || Object.assign({}, it))[p] = v; }
+    return out || it;
+  }
+  window.VH2D_styled = styled;
+  /** Whether a layer is shown at t: its own time, and every group it sits in (hidden or out of time hides it). */
+  function shown(it, t, depth = 0) {
+    if (t < it.t0 || t >= it.t1 || it.hidden) return false;
+    if (it.parent && depth < 8) { const par = items.find(p => p.id === it.parent); if (par && par.kind === 'group') return shown(par, t, depth + 1); }
+    return true;
+  }
   const PROPS = ['x', 'y', 'w', 'h', 'rot', 'scale', 'opacity'];
   // a point k (0..1) of the way along a polyline [[x, y], ...], by length, and the heading there
   function alongPath(P, k) {
@@ -80,7 +165,7 @@
       for (let i = 0; i < ks.length - 1; i++) {
         const a = ks[i], b = ks[i + 1];
         if (t >= a.t && t <= b.t) {
-          const k = (EASE[b.ease || 'inOut'] || EASE.inOut)((t - a.t) / Math.max(1e-6, b.t - a.t));
+          const k = curve(b)((t - a.t) / Math.max(1e-6, b.t - a.t));
           s[p] = a[p] + (b[p] - a[p]) * k;
           break;
         }
@@ -99,7 +184,10 @@
         const now = state(par, t, depth + 1), base = { x: par.x || 0, y: par.y || 0, rot: par.rot || 0 };
         const pcx = now.x + now.w / 2, pcy = now.y + now.h / 2, bcx = base.x + (par.w || 200) / 2, bcy = base.y + (par.h || 100) / 2;
         const dr = (now.rot - base.rot) * Math.PI / 180;
-        const ox = s.x + s.w / 2 - bcx, oy = s.y + s.h / 2 - bcy;
+        // a group also scales and fades what is in it
+        const grp = par.kind === 'group', ds = grp ? now.scale / (par.scale ?? 1) : 1;
+        if (grp) { s.scale *= ds; s.opacity *= now.opacity; }
+        const ox = (s.x + s.w / 2 - bcx) * ds, oy = (s.y + s.h / 2 - bcy) * ds;
         const rx = ox * Math.cos(dr) - oy * Math.sin(dr), ry = ox * Math.sin(dr) + oy * Math.cos(dr);
         s.x = pcx + rx - s.w / 2; s.y = pcy + ry - s.h / 2; s.rot += now.rot - base.rot;
       }
@@ -110,52 +198,129 @@
 
   const target = () => [...document.querySelectorAll('canvas')].sort((a, b) => b.width * b.height - a.width * a.height)[0];
   const FONT = '"Segoe UI", system-ui, sans-serif';
-  function textBlock(g, it, w, h, str, color) {
+  // typing: 'chars' or 'words' reveal the text over `reveal` seconds (life 0..1)
+  function typed(str, mode, life) {
+    if (!mode || life >= 1) return str;
+    if (mode === 'words') { const p = str.split(/(\s+)/); let n = Math.floor(p.length * life), o = ''; for (let i = 0; i < n; i++) o += p[i]; return o; }
+    return str.slice(0, Math.floor(str.length * life));
+  }
+  function textBlock(g, it, w, h, str, color, life) {
     const size = it.size || 72;
     g.font = `${it.italic ? 'italic ' : ''}${it.weight || 800} ${size}px ${it.font || FONT}`;
     g.textAlign = it.align || 'center'; g.textBaseline = 'middle';
+    if (it.spacing) try { g.letterSpacing = it.spacing + 'px'; } catch (e) { /* an older browser */ }
     const tx = g.textAlign === 'left' ? (it.pad ?? size * 0.3) : g.textAlign === 'right' ? w - (it.pad ?? size * 0.3) : w / 2;
-    const lines = String(str ?? '').split('\n'), lh = size * 1.15;
+    let all = String(str ?? '');
+    if (it.upper) all = all.toLocaleUpperCase();
+    const full = all.split('\n'), lh = size * (it.lineHeight || 1.15);
+    const lines = it.typing && life !== undefined ? typed(all, it.typing, life).split('\n') : full;
     lines.forEach((ln, i) => {
-      const ty = h / 2 + (i - (lines.length - 1) / 2) * lh;
+      const ty = h / 2 + (i - (full.length - 1) / 2) * lh;
       if (it.stroke) { g.lineJoin = 'round'; g.lineWidth = it.strokeWidth || size * 0.12; g.strokeStyle = it.stroke; g.strokeText(ln, tx, ty); }
       g.fillStyle = color || it.color || '#fff'; g.fillText(ln, tx, ty);
     });
+    try { g.letterSpacing = '0px'; } catch (e) { /* an older browser */ }
   }
+  // a fill: one colour, or a gradient from bg to bg2 at gradAngle degrees
+  function paint(g, it, c, w, h) {
+    if (!it.bg2) return c;
+    const a = ((it.gradAngle ?? 90) - 90) * Math.PI / 180, r = Math.hypot(w, h) / 2, dx = Math.cos(a) * r, dy = Math.sin(a) * r;
+    const gr = g.createLinearGradient(w / 2 - dx, h / 2 - dy, w / 2 + dx, h / 2 + dy);
+    gr.addColorStop(0, c); gr.addColorStop(1, it.bg2);
+    return gr;
+  }
+  // numeric puppet params keyed over the film's time: pkeys = [{t, p: {name: value}, ease}]
+  function paramsAt(it, t) {
+    const ks = (it.pkeys || []).slice().sort((a, b) => a.t - b.t);
+    if (!ks.length) return it.params;
+    const out = Object.assign({}, it.params || {});
+    const names = new Set(); ks.forEach(k => Object.keys(k.p || {}).forEach(n => names.add(n)));
+    for (const n of names) {
+      const kk = ks.filter(k => k.p && k.p[n] !== undefined);
+      if (t <= kk[0].t) { out[n] = kk[0].p[n]; continue; }
+      if (t >= kk[kk.length - 1].t) { out[n] = kk[kk.length - 1].p[n]; continue; }
+      for (let i = 0; i < kk.length - 1; i++) {
+        const a = kk[i], b = kk[i + 1];
+        if (t >= a.t && t <= b.t) {
+          const va = a.p[n], vb = b.p[n];
+          const k = curve(b)((t - a.t) / Math.max(1e-6, b.t - a.t));
+          out[n] = typeof va === 'number' && typeof vb === 'number' ? va + (vb - va) * k : va;
+          break;
+        }
+      }
+    }
+    return out;
+  }
+  window.VH2D_params = paramsAt;
   function draw(t) {
     const cv = target(); if (!cv) return;
     const g = cv.getContext('2d'); if (!g) return;
     inGroup++;
     try {
-    for (const it of items) {
-      if (t < it.t0 || t >= it.t1 || it.hidden) continue;
-      const st = state(it, t);
+    const seen = new Set();
+    for (const it0 of items) {
+      if (it0.kind === 'group' || !shown(it0, t)) continue;
+      const it = styled(it0, t);
+      const st = state(it0, t);
       const fade = it.fade ?? 0.25;
-      const k = fade > 0 ? clamp(Math.min((t - it.t0) / fade, (it.t1 - t) / fade), 0, 1) : 1;
+      // the way in (anim) and the way out (animOut, the way in when not set), each over `fade` seconds
+      const kIn = fade > 0 ? clamp((t - it.t0) / fade, 0, 1) : 1, kOut = fade > 0 ? clamp((it.t1 - t) / fade, 0, 1) : 1;
+      const out = kOut < kIn;
+      const k = Math.min(kIn, kOut);
+      const anim = (out ? (it.animOut || it.anim) : it.anim) || 'fade';
       const e = 1 - Math.pow(1 - k, 3);
-      const a = st.opacity * (it.anim && it.anim !== 'fade' ? Math.min(1, k * 2) : k);
+      const a = st.opacity * (anim === 'none' || anim === 'wipe' ? 1 : anim !== 'fade' ? Math.min(1, k * 2) : k);
       if (a <= 0) continue;
       const { x, y, w, h } = st;
       const life = clamp((t - it.t0) / Math.max(0.01, (it.reveal ?? 0.8)), 0, 1);  // 0..1 for draw-on kinds
       g.save();
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.globalAlpha = a;
+      if (it.blend && it.blend !== 'normal') g.globalCompositeOperation = it.blend;
+      const blur = (it.blur || 0) + (anim === 'blur' ? (1 - e) * 24 : 0);
+      if (blur > 0.05) g.filter = `blur(${blur.toFixed(2)}px)`;
+      if (it.shadow) { g.shadowColor = it.shadow; g.shadowBlur = it.shadowBlur ?? 24; g.shadowOffsetX = it.shadowX ?? 0; g.shadowOffsetY = it.shadowY ?? 8; }
       g.translate(x + w / 2, y + h / 2);
-      if (it.anim === 'slide-up') g.translate(0, (1 - e) * h * 0.6);
-      else if (it.anim === 'slide-left') g.translate((1 - e) * w * 0.4, 0);
-      else if (it.anim === 'pop') { const s = k < 1 ? 0.6 + 0.4 * e + Math.sin(e * Math.PI) * 0.08 : 1; g.scale(s, s); }
+      if (anim === 'slide-up') g.translate(0, (1 - e) * h * 0.6);
+      else if (anim === 'slide-down') g.translate(0, -(1 - e) * h * 0.6);
+      else if (anim === 'slide-left') g.translate((1 - e) * w * 0.4, 0);
+      else if (anim === 'slide-right') g.translate(-(1 - e) * w * 0.4, 0);
+      else if (anim === 'pop') { const s = k < 1 ? 0.6 + 0.4 * e + Math.sin(e * Math.PI) * 0.08 : 1; g.scale(s, s); }
+      else if (anim === 'zoom') { const s = 0.3 + 0.7 * e; g.scale(s, s); }
+      else if (anim === 'spin') { g.rotate(-(1 - e) * Math.PI / 2); g.scale(0.5 + 0.5 * e, 0.5 + 0.5 * e); }
       if (st.rot) g.rotate(st.rot * Math.PI / 180);
       if (st.scale !== 1) g.scale(st.scale, st.scale);
+      if (it.fx || it.fy) g.scale(it.fx ? -1 : 1, it.fy ? -1 : 1);
       g.translate(-w / 2, -h / 2);
-      const bg = it.bg || (it.kind === 'rect' ? (it.color || '#e9b84a') : null);
-      if (bg && it.kind !== 'lower' && it.kind !== 'progress') { g.fillStyle = bg; g.beginPath(); g.roundRect(0, 0, w, h, it.radius || 0); g.fill(); }
+      if (anim === 'wipe' && k < 1) { g.beginPath(); if (out) g.rect(w * (1 - e), -h, w * e + 1, h * 3); else g.rect(0, -h, w * e, h * 3); g.clip(); }
+      const bg = it.bg || (it.kind === 'rect' ? (it.color || '#e9b84a') : it.kind === 'ellipse' ? (it.color || '#e9b84a') : null);
+      const shape = (w2, h2) => { g.beginPath(); if (it.kind === 'ellipse') g.ellipse(w2 / 2, h2 / 2, w2 / 2, h2 / 2, 0, 0, Math.PI * 2); else g.roundRect(0, 0, w2, h2, Math.min(it.radius || 0, w2 / 2, h2 / 2)); };
+      if (bg && it.kind !== 'lower' && it.kind !== 'progress') { g.fillStyle = paint(g, it, bg, w, h); shape(w, h); g.fill(); g.shadowColor = 'transparent'; }
+      const edge = () => { if (it.border && it.borderWidth !== 0) { g.save(); g.strokeStyle = it.border; g.lineWidth = it.borderWidth || 6; shape(w, h); g.stroke(); g.restore(); } };
+      if (['rect', 'ellipse', 'text'].includes(it.kind)) edge();
       switch (it.kind) {
-        case 'puppet': drawPuppet(g, it.puppet, it.params, t - it.t0, it.states, w, h); break;
-        case 'image':
-          if (imgs[it.src]) g.drawImage(imgs[it.src], 0, 0, w, h);
+        case 'puppet': drawPuppet(g, it.puppet, paramsAt(it, t), t - it.t0, it.states, w, h, it.speed); break;
+        case 'group': break;
+        case 'image': {
+          const im = imgs[it.src];
+          if (!im) break;
+          media(g, it, im, im.naturalWidth || im.width || w, im.naturalHeight || im.height || h, w, h);
+          edge();
           break;
+        }
+        case 'video': {
+          const v = video(it, t);
+          seen.add(v);
+          if (v.readyState >= 2 && v.videoWidth && !v.seeking) {
+            media(g, it, v, v.videoWidth, v.videoHeight, w, h);
+            // the last frame shown, for while the next one is being looked for (no flicker when scrubbing)
+            if (!window.VH2D_PLAYING) try { const c = v._last || (v._last = document.createElement('canvas')); if (c.width !== v.videoWidth) { c.width = v.videoWidth; c.height = v.videoHeight; } c.getContext('2d').drawImage(v, 0, 0); v._has = true; } catch (e) { /* a cross-origin file */ }
+          } else if (v._has) media(g, it, v._last, v._last.width, v._last.height, w, h);
+          edge();
+          break;
+        }
         case 'text':
-          textBlock(g, it, w, h, it.text);
+          textBlock(g, it, w, h, it.text, undefined, life);
           break;
         case 'counter': {
           const v = (it.from ?? 0) + ((it.to ?? 100) - (it.from ?? 0)) * (1 - Math.pow(1 - life, 3));
@@ -218,7 +383,61 @@
       }
       g.restore();
     }
+    // videos not on screen now stop playing
+    for (const v of Object.values(VIDS)) if (!seen.has(v) && !v.paused) v.pause();
     } finally { inGroup--; }
+  }
+  // a picture or a video frame in the box: stretched, cover (crop) or contain, with round corners
+  function media(g, it, el, iw, ih, w, h) {
+    g.save();
+    if (it.radius) { g.beginPath(); g.roundRect(0, 0, w, h, Math.min(it.radius, w / 2, h / 2)); g.clip(); }
+    if (it.fit === 'cover' || it.fit === 'contain') {
+      const s = it.fit === 'cover' ? Math.max(w / iw, h / ih) : Math.min(w / iw, h / ih);
+      if (it.fit === 'cover') { g.beginPath(); g.rect(0, 0, w, h); g.clip(); }
+      g.drawImage(el, (w - iw * s) / 2, (h - ih * s) / 2, iw * s, ih * s);
+    } else g.drawImage(el, 0, 0, w, h);
+    g.restore();
+  }
+  // ---- video layers: {kind: 'video', src, in (s into the file), speed, loop, fit} ----
+  // Every frame shows the file's picture at exactly (t - t0) * speed + in. Renders (and a paused preview) seek
+  // to it and wait for the frame; while the app plays (window.VH2D_PLAYING) the video plays along and is only
+  // pulled back when it drifts. The sound comes from the film's mix (a linked sound clip), never from here.
+  const VIDS = {};
+  window.VH2D_media = () => ({ pend, videos: Object.entries(VIDS).map(([k, v]) => ({ k, ready: v.readyState, t: v.currentTime, seeking: v.seeking, paused: v.paused, err: v.error && v.error.code })) });
+  function video(it, t) {
+    const key = it.id + '|' + it.src;
+    let v = VIDS[key];
+    if (!v) {
+      v = VIDS[key] = document.createElement('video');
+      v.muted = true; v.preload = 'auto'; v.playsInline = true;
+      pend++;
+      let done = false;
+      const ok = () => { if (!done) { done = true; pend--; settled(); } };
+      v.addEventListener('loadeddata', ok); v.addEventListener('error', () => { console.error('video ' + it.src + ': cannot be played here'); ok(); });
+      setTimeout(ok, 15000);
+      v.src = it.src;
+    }
+    const speed = it.speed || 1, dur = v.duration || Infinity, from = it.in || 0;
+    let want = (t - it.t0) * speed + from;
+    if (it.loop && isFinite(dur) && dur > from + 0.05) want = from + ((want - from) % (dur - from));
+    want = Math.max(0, Math.min(isFinite(dur) ? dur - 0.001 : want, want));
+    if (v.readyState < 1) return v;
+    if (window.VH2D_PLAYING) {
+      if (v.playbackRate !== speed) v.playbackRate = speed;
+      if (v.paused) { v.currentTime = want; v.play().catch(() => {}); }
+      else if (Math.abs(v.currentTime - want) > 0.25) v.currentTime = want;
+    } else {
+      if (!v.paused) v.pause();
+      if (Math.abs(v.currentTime - want) > 0.002 || v.seeking) {
+        if (!v.seeking) v.currentTime = want;
+        pend++;
+        let done = false;
+        const ok = () => { if (!done) { done = true; v.removeEventListener('seeked', ok); pend--; settled(); } };
+        v.addEventListener('seeked', ok);
+        setTimeout(ok, 5000);
+      }
+    }
+    return v;
   }
 
   // ======================= KE: the editable engine =======================
@@ -280,12 +499,12 @@
   }
   // which state plays at puppet time t: states = [{state, t0, blend}] in the puppet's own seconds. With a
   // blend (seconds; the state's own default otherwise) the one before fades out under it: s.prev, s.mix.
-  function stateAt(def, states, t) {
+  function stateAt(def, states, t, speed) {
     const S = def.states || {};
     let cur = { state: def.initial || Object.keys(S)[0] || 'idle', t0: 0 }, prev = null;
     for (const s of (states || []).slice().sort((a, b) => a.t0 - b.t0)) if (t >= s.t0) { prev = cur; cur = s; }
     const one = c => {
-      const info = S[c.state] || {}, dur = info.dur || 1, st = Math.max(0, t - (c.t0 || 0));
+      const info = S[c.state] || {}, dur = info.dur || 1, st = Math.max(0, t - (c.t0 || 0)) * (speed || 1);
       return { name: c.state, t: st, k: info.loop ? (st / dur) % 1 : clamp(st / dur, 0, 1), dur };
     };
     const s = one(cur);
@@ -309,7 +528,7 @@
     for (const [k, v] of Object.entries(def.params || {})) p[k] = v && typeof v === 'object' && 'default' in v ? v.default : v;
     return Object.assign(p, over || {});
   }
-  function drawPuppet(g, name, params, t, states, w, h) {
+  function drawPuppet(g, name, params, t, states, w, h, speed) {
     const def = puppetDef(name);
     if (!def || !def.fn) {
       g.save(); g.strokeStyle = '#7fb0ff'; g.setLineDash([12, 8]); g.lineWidth = 4; g.strokeRect(0, 0, w || 200, h || 200);
@@ -332,7 +551,8 @@
       try { def.fn(g, pp, t, st, U); } catch (e) { complain(name, e); }
       g.restore();
     };
-    const s = stateAt(def, states, t);
+    const s = stateAt(def, states, t, speed);
+    if (speed && speed !== 1) t *= speed;
     // a blend without the see-through dip of two half-faded drawings: the outgoing state stays solid while
     // the new one comes up over it, then the new one is solid while the old one fades away on top
     if (s.prev) {
@@ -359,7 +579,7 @@
       if (t >= ks[ks.length - 1].t) { e[p] = ks[ks.length - 1][p]; continue; }
       for (let i = 0; i < ks.length - 1; i++) {
         const a = ks[i], b = ks[i + 1];
-        if (t >= a.t && t <= b.t) { const k = (EASE[b.ease || 'inOut'] || EASE.inOut)((t - a.t) / Math.max(1e-6, b.t - a.t)); e[p] = a[p] + (b[p] - a[p]) * k; break; }
+        if (t >= a.t && t <= b.t) { const k = curve(b)((t - a.t) / Math.max(1e-6, b.t - a.t)); e[p] = a[p] + (b[p] - a[p]) * k; break; }
       }
     }
     return e;
@@ -539,15 +759,18 @@
   })();
   let curT = 0;
 
-  let wrapped = null;
+  let wrapped = null, latest = null;
   function wrap() {
     const orig = window.renderOut;
     if (typeof orig !== 'function' || orig === wrapped) return;
     wrapped = function (t, again) {
+      // only the newest frame asked for is drawn again once its pictures and video frames are in: an older
+      // one coming back late would paint over it
+      if (!again) latest = t; else if (t !== latest) return;
       BOXES.length = 0; curT = t;
       const r = orig(t);
       // a puppet first met in this frame may still be loading its pictures: wait, then draw the frame again
-      const fin = () => { draw(t); if (pend > 0 && (again || 0) < 3) return whenSettled().then(() => wrapped(t, (again || 0) + 1)); };
+      const fin = () => { draw(t); if (pend > 0 && (again || 0) < 4) return whenSettled().then(() => wrapped(t, (again || 0) + 1)); };
       if (r && r.then) return r.then(fin);
       return fin() || r;
     };

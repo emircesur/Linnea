@@ -1,0 +1,50 @@
+{
+ "linnea": "rppet/1",
+ "version": 1,
+ "label": "Heart",
+ "desc": "A heart. beat: a double heartbeat; burst: pops in and throws little hearts around; idle: floats gently.",
+ "tags": [
+  "icon",
+  "heart",
+  "love",
+  "like",
+  "kalp",
+  "beğen"
+ ],
+ "size": [
+  400,
+  400
+ ],
+ "params": {
+  "color": {
+   "type": "color",
+   "default": "#ff4d6d",
+   "label": "Colour"
+  },
+  "shine": {
+   "type": "bool",
+   "default": true,
+   "label": "Shine"
+  }
+ },
+ "states": {
+  "beat": {
+   "dur": 0.9,
+   "loop": true,
+   "label": "Heartbeat"
+  },
+  "burst": {
+   "dur": 1.3,
+   "loop": false,
+   "label": "Burst"
+  },
+  "idle": {
+   "dur": 2.4,
+   "loop": true,
+   "label": "Float"
+  }
+ },
+ "initial": "beat",
+ "example": "KE.puppet(g, 'like', t, { use: 'heart', x: W / 2, y: H / 2, t0: 2, t1: 5, states: [{ state: 'burst', t0: 0 }, { state: 'beat', t0: 1.3 }] })",
+ "draw": "function (g, p, t, s, u) {\n  const W = u.W, c = W / 2, PI = Math.PI, cl = u.clamp, e = u.ease, k = s.k;\n  const heart = (x, y, r) => { g.beginPath(); g.moveTo(x, y + r * 0.9); g.bezierCurveTo(x - r * 1.45, y - r * 0.05, x - r * 0.62, y - r * 1.25, x, y - r * 0.42); g.bezierCurveTo(x + r * 0.62, y - r * 1.25, x + r * 1.45, y - r * 0.05, x, y + r * 0.9); g.closePath(); };\n  let z = 1, oy = 0;\n  if (s.name === 'beat') { const b = Math.exp(-Math.pow(k - 0.12, 2) / 0.004) + 0.65 * Math.exp(-Math.pow(k - 0.34, 2) / 0.004); z = 1 + 0.13 * b; }\n  else if (s.name === 'burst') {\n    z = e.back(cl(k * 2.4, 0, 1));\n    for (let i = 0; i < 8; i++) {\n      const a = (i / 8) * PI * 2 + 0.35, d = W * 0.22 + W * 0.3 * e.out(cl(k * 1.2, 0, 1)), al = cl(1 - (k - 0.15) / 0.85, 0, 1);\n      if (k < 0.12) continue;\n      g.save(); g.globalAlpha = al; g.fillStyle = p.color; heart(c + Math.cos(a) * d, c + Math.sin(a) * d, W * 0.045 * (1 + (i % 3) * 0.3)); g.fill(); g.restore();\n    }\n  } else oy = Math.sin(t * 2.6) * W * 0.02;\n  g.save(); g.translate(c, c + oy); g.scale(z, z);\n  g.fillStyle = p.color; heart(0, 0, W * 0.3); g.fill();\n  if (p.shine) { g.globalAlpha = 0.35; g.fillStyle = '#ffffff'; g.beginPath(); g.ellipse(-W * 0.13, -W * 0.13, W * 0.05, W * 0.08, -0.6, 0, PI * 2); g.fill(); }\n  g.restore();\n}"
+}

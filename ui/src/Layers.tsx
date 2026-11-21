@@ -1,72 +1,15 @@
-// Layers over a film or a reel: drag, resize, edit text in place, drop pictures, keyframe and rig.
+// Layers over a film or a reel: drag, resize from any side, turn, snap to the frame and to each other,
+// edit text in place, drop pictures and library items, keyframe and rig.
 // The same item format as linnea2d.js draws (tweaks.json items2d); evalItem mirrors its motion exactly.
 import { tx } from "./i18n";
 import { useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Diamond, Eye, EyeOff, Gauge, Hash, Image as ImageIcon, PenLine, Smartphone, Square, Trash2, Type, Rows3 } from "lucide-react";
 import { Json, tool } from "./api";
+import { evalItem, Item } from "./Motion";
+import { copyItems, duplicate, group, hasClip, layerName, pasteItems, r2, remove, reorder, replace, setProp, shift, split, topOf, trim, uid, ungroup, withInside } from "./LayerOps";
+import { groupsOf } from "./Motion";
 
-export type Key = { t: number; x?: number; y?: number; w?: number; h?: number; rot?: number; scale?: number; opacity?: number; ease?: string };
-export type Item = { id: string; kind: string; t0: number; t1: number; x: number; y: number; w: number; h: number; keys?: Key[]; parent?: string; hidden?: boolean; [k: string]: any };
-
-const r2 = (x: number) => Math.round(x * 100) / 100;
-const PROPS = ["x", "y", "w", "h", "rot", "scale", "opacity"] as const;
-const EASE: Record<string, (k: number) => number> = {
-  linear: (k) => k,
-  out: (k) => 1 - Math.pow(1 - k, 3),
-  in: (k) => k * k * k,
-  inOut: (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2),
-  back: (k) => { const c = 1.7; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); },
-};
-
-/** A point k (0..1) of the way along a polyline, by length, and the heading there (as linnea2d.js). */
-function alongPath(P: number[][], k: number) {
-  const L: number[] = [];
-  let tot = 0;
-  for (let i = 1; i < P.length; i++) { const d = Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); L.push(d); tot += d; }
-  let want = k * tot, i = 0;
-  while (i < L.length - 1 && want > L[i]) { want -= L[i]; i++; }
-  const a = P[i], b = P[i + 1], f = L[i] > 0 ? Math.max(0, Math.min(1, want / L[i])) : 0;
-  return { x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, a: Math.atan2(b[1] - a[1], b[0] - a[0]) };
-}
-
-export function evalItem(items: Item[], it: Item, t: number, depth = 0): Json {
-  const s: Json = { x: it.x || 0, y: it.y || 0, w: it.w || 200, h: it.h || 100, rot: it.rot || 0, scale: it.scale ?? 1, opacity: it.opacity ?? 1 };
-  const keys = (it.keys || []).slice().sort((a, b) => a.t - b.t);
-  for (const p of PROPS) {
-    const ks = keys.filter((k) => (k as Json)[p] !== undefined);
-    if (!ks.length) continue;
-    if (t <= ks[0].t) { s[p] = (ks[0] as Json)[p]; continue; }
-    if (t >= ks[ks.length - 1].t) { s[p] = (ks[ks.length - 1] as Json)[p]; continue; }
-    for (let i = 0; i < ks.length - 1; i++) {
-      const a = ks[i] as Json, b = ks[i + 1] as Json;
-      if (t >= a.t && t <= b.t) {
-        const k = (EASE[b.ease || "inOut"] || EASE.inOut)((t - a.t) / Math.max(1e-6, b.t - a.t));
-        s[p] = a[p] + (b[p] - a[p]) * k;
-        break;
-      }
-    }
-  }
-  if (Array.isArray(it.path) && it.path.length >= 2) {
-    const span = Math.max(0.01, (it.t1 ?? t) - (it.t0 ?? 0));
-    const pt = alongPath(it.path, (EASE[it.pathEase || "inOut"] || EASE.inOut)(Math.max(0, Math.min(1, (t - (it.t0 || 0)) / span))));
-    s.x = pt.x - s.w / 2;
-    s.y = pt.y - s.h / 2;
-    if (it.pathTurn) s.rot += (pt.a * 180) / Math.PI;
-  }
-  if (it.parent && depth < 8) {
-    const par = items.find((p) => p.id === it.parent);
-    if (par) {
-      const now = evalItem(items, par, t, depth + 1);
-      const bcx = (par.x || 0) + (par.w || 200) / 2, bcy = (par.y || 0) + (par.h || 100) / 2;
-      const dr = ((now.rot - (par.rot || 0)) * Math.PI) / 180;
-      const ox = s.x + s.w / 2 - bcx, oy = s.y + s.h / 2 - bcy;
-      s.x = now.x + now.w / 2 + ox * Math.cos(dr) - oy * Math.sin(dr) - s.w / 2;
-      s.y = now.y + now.h / 2 + ox * Math.sin(dr) + oy * Math.cos(dr) - s.h / 2;
-      s.rot += now.rot - (par.rot || 0);
-    }
-  }
-  return s;
-}
+export { evalItem } from "./Motion";
+export type { Item, Key } from "./Motion";
 
 /** Layers of a film (`hub_2d`, {film}) or of a reel (`reel_layers`, {project, reel}). */
 export function useLayers(toolName: string, args: Json, push: (items: Item[]) => void, before?: (prev: Item[]) => void) {
@@ -105,199 +48,204 @@ export function useLayers(toolName: string, args: Json, push: (items: Item[]) =>
 }
 export type Layers = ReturnType<typeof useLayers>;
 
-const KINDS: [string, string, any][] = [
-  ["text", tx("Text"), Type], ["image", tx("Picture"), ImageIcon], ["rect", tx("Box"), Square], ["counter", tx("Counter"), Hash], ["marker", tx("Handwriting"), PenLine],
-  ["arrow", "Ok", ArrowUpRight], ["phone", tx("Phone"), Smartphone], ["lower", tx("Lower third"), Rows3], ["progress", tx("Progress"), Gauge],
-];
-
-function newItem(kind: string, t: number, dur: number, W: number, H: number): Item {
-  const id = "l" + Date.now().toString(36);
+/** What can be added: [kind, label, make(t, dur, W, H)]. */
+export function newItem(kind: string, t: number, dur: number, W: number, H: number): Item {
+  const id = uid(kind === "puppet" ? "p" : "l");
   const m = Math.min(W, H);
-  const b: Item = { id, kind, t0: r2(t), t1: r2(Math.min(dur, t + 3)), x: W * 0.1, y: H * 0.68, w: W * 0.8, h: m * 0.12, opacity: 1, fade: 0.25 };
+  const b: Item = { id, kind, t0: r2(t), t1: r2(Math.min(dur, t + 3)), x: Math.round(W * 0.1), y: Math.round(H * 0.68), w: Math.round(W * 0.8), h: Math.round(m * 0.14), opacity: 1, fade: 0.25 };
+  if (b.t1 - b.t0 < 0.5) b.t0 = r2(Math.max(0, b.t1 - 3));
   switch (kind) {
     case "text": return { ...b, text: tx("Title"), size: Math.round(m * 0.08), color: "#ffffff", weight: 800, stroke: "#000000" };
+    case "subtitle": return { ...b, kind: "text", y: Math.round(H * 0.8), h: Math.round(m * 0.1), text: tx("A line of subtitle"), size: Math.round(m * 0.045), color: "#ffffff", weight: 600, shadow: "rgba(0,0,0,0.6)", shadowBlur: 14, shadowY: 3 };
+    case "caption": return { ...b, kind: "text", x: Math.round(W * 0.2), w: Math.round(W * 0.6), h: Math.round(m * 0.11), text: tx("Caption"), size: Math.round(m * 0.05), color: "#111111", weight: 700, bg: "#ffffff", radius: Math.round(m * 0.03), anim: "pop" };
+    case "typing": return { ...b, kind: "text", text: tx("Typed out letter by letter"), size: Math.round(m * 0.06), color: "#ffffff", weight: 700, typing: "chars", reveal: 1.5, align: "left" };
     case "rect": return { ...b, bg: "#e9b84a", radius: 24 };
+    case "ellipse": return { ...b, kind: "ellipse", x: Math.round(W / 2 - m * 0.15), y: Math.round(H / 2 - m * 0.15), w: Math.round(m * 0.3), h: Math.round(m * 0.3), bg: undefined, color: "#e9b84a", anim: "pop" };
+    case "ring": return { ...b, kind: "ellipse", x: Math.round(W / 2 - m * 0.15), y: Math.round(H / 2 - m * 0.15), w: Math.round(m * 0.3), h: Math.round(m * 0.3), color: "rgba(0,0,0,0)", border: "#e9b84a", borderWidth: Math.round(m * 0.012), anim: "zoom" };
+    case "gradient": return { ...b, kind: "rect", x: 0, y: 0, w: W, h: H, bg: "#1d2b64", bg2: "#f8cdda", gradAngle: 135, radius: 0, t0: 0, t1: r2(dur), fade: 0 };
+    case "scrim": return { ...b, kind: "rect", x: 0, y: Math.round(H * 0.55), w: W, h: Math.round(H * 0.45), bg: "rgba(0,0,0,0)", bg2: "rgba(0,0,0,0.75)", gradAngle: 180, radius: 0 };
     case "counter": return { ...b, from: 0, to: 1000, prefix: "", suffix: "", size: Math.round(m * 0.12), color: "#ffffff", weight: 800, reveal: 1.2 };
     case "marker": return { ...b, text: tx("Note"), size: Math.round(m * 0.09), color: "#e9b84a", reveal: 1.0 };
-    case "arrow": return { ...b, x: W * 0.3, y: H * 0.4, w: W * 0.3, h: H * 0.1, color: "#e9b84a", width: Math.round(m * 0.012), reveal: 0.6 };
-    case "phone": return { ...b, x: W * 0.25, y: H * 0.2, w: W * 0.5, h: W * 1.05, title: tx("Linnea"), text: tx("New notification"), reveal: 0.8 };
-    case "lower": return { ...b, x: W * 0.06, y: H * 0.72, w: W * 0.7, h: m * 0.13, text: tx("Full Name"), sub: tx("Job title"), reveal: 0.6 };
-    case "progress": return { ...b, y: H * 0.9, h: m * 0.025, value: 1, color: "#e9b84a", reveal: Math.max(0.5, b.t1 - b.t0), fade: 0 };
+    case "arrow": return { ...b, x: Math.round(W * 0.3), y: Math.round(H * 0.4), w: Math.round(W * 0.3), h: Math.round(H * 0.1), color: "#e9b84a", width: Math.round(m * 0.012), reveal: 0.6 };
+    case "phone": return { ...b, x: Math.round(W * 0.25), y: Math.round(H * 0.2), w: Math.round(W * 0.5), h: Math.round(W * 1.05), title: tx("Linnea"), text: tx("New notification"), reveal: 0.8 };
+    case "lower": return { ...b, x: Math.round(W * 0.06), y: Math.round(H * 0.72), w: Math.round(W * 0.7), h: Math.round(m * 0.13), text: tx("Full Name"), sub: tx("Job title"), reveal: 0.6 };
+    case "progress": return { ...b, y: Math.round(H * 0.9), h: Math.round(m * 0.025), value: 1, color: "#e9b84a", reveal: Math.max(0.5, b.t1 - b.t0), fade: 0 };
+    case "image": return { ...b, x: Math.round(W * 0.25), y: Math.round(H * 0.3), w: Math.round(W * 0.5), h: Math.round(W * 0.5), fit: "cover" };
     default: return b;
   }
 }
 
-export function LayersPanel({ L, t, W, H, dur, sel, setSel, pathFor, setPathFor }: { L: Layers; t: number; W: number; H: number; dur: number; sel: string; setSel: (s: string) => void; pathFor?: string; setPathFor?: (s: string) => void }) {
-  const items = L.items;
-  const it = items.find((x) => x.id === sel);
-  const set = (p: Partial<Item>) => L.update(items.map((x) => (x.id === sel ? { ...x, ...p } : x)));
-  const add = async (kind: string) => {
-    const b = newItem(kind, t, dur, W, H);
-    if (kind === "image") {
-      const r = await tool("pick_file");
-      if (!r.path) return;
-      b.src = await L.addImage(r.path);
-      b.w = W * 0.5; b.h = W * 0.5; b.x = W * 0.25; b.y = H * 0.3;
-    }
-    L.update([...items, b]);
-    setSel(b.id);
-  };
-  const keyHere = () => {
-    if (!it) return;
-    const s = evalItem(items, it, t);
-    const keys = (it.keys || []).filter((k) => Math.abs(k.t - t) > 0.02);
-    set({ keys: [...keys, { t: r2(t), x: Math.round(s.x), y: Math.round(s.y), w: Math.round(s.w), h: Math.round(s.h), rot: r2(s.rot), scale: r2(s.scale), opacity: r2(s.opacity), ease: "inOut" }].sort((a, b) => a.t - b.t) });
-  };
-  const num = (k: string, label: string, step = 1) => (
-    <div className="field"><label>{label}</label><input className="input num" type="number" step={step} key={`${sel}${k}${it?.[k]}`} defaultValue={it?.[k] ?? ""} onBlur={(e) => set({ [k]: e.target.value === "" ? undefined : +e.target.value })} /></div>
-  );
-  const str = (k: string, label: string) => (
-    <div className="field"><label>{label}</label><input className="input" key={`${sel}${k}`} defaultValue={it?.[k] ?? ""} onChange={(e) => set({ [k]: e.target.value })} /></div>
-  );
-  const color = (k: string, label: string) => (
-    <div className="field"><label>{label}</label><div className="rowx"><input className="input" type="color" style={{ padding: 2, width: 40 }} value={it?.[k] || "#000000"} onChange={(e) => set({ [k]: e.target.value })} /><button className="btn icon sm ghost" title={tx("None")} onClick={() => set({ [k]: undefined })}><Trash2 /></button></div></div>
-  );
-  const textual = it && ["text", "marker", "counter", "lower"].includes(it.kind);
-  return (
-    <div className="stack" style={{ gap: 12 }}>
-      {!L.installed && (
-        <div className="card" style={{ padding: 12 }}>
-          <p className="sec" style={{ fontSize: 12, marginBottom: 8 }}>{tx("This page has no layer hook. Once installed, layers are drawn in the preview and in renders.")}</p>
-          <button className="btn sm" onClick={L.install}>{tx("Install hook")}</button>
-        </div>
-      )}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
-        {KINDS.map(([k, l, I]) => <button key={k} className="btn sm" onClick={() => add(k)}><I />{l}</button>)}
-      </div>
-      <div className="list-rows">
-        {items.map((x) => (
-          <div key={x.id} className="rowx" style={{ padding: "6px 0", cursor: "pointer", color: x.id === sel ? "var(--text)" : "var(--text-2)" }} onClick={() => setSel(x.id)}>
-            <span className="tag">{KINDS.find((k) => k[0] === x.kind)?.[1] || x.kind}</span>
-            <span className="grow" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>{x.text || x.title || x.src || ""}</span>
-            {x.keys?.length ? <Diamond size={12} style={{ color: "var(--accent-ink)" }} /> : null}
-            <span className="num muted" style={{ fontSize: 11 }}>{x.t0}–{x.t1}</span>
-            <button className="btn icon sm ghost" title={x.hidden ? tx("Show") : tx("Hide")} onClick={(e) => { e.stopPropagation(); L.update(items.map((y) => (y.id === x.id ? { ...y, hidden: !y.hidden } : y))); }}>{x.hidden ? <EyeOff /> : <Eye />}</button>
-          </div>
-        ))}
-      </div>
-      {!items.length && <p className="muted" style={{ fontSize: 12, lineHeight: "18px" }}>{tx("Pick a kind, or drop a picture onto the frame. Drag a box to move it, resize from the corner, double-click text to change it in place.")}</p>}
-      {it && (
-        <div className="stack" style={{ gap: 8 }}>
-          {textual && it.kind !== "counter" && <textarea className="input" style={{ fontFamily: "var(--font)", fontSize: 13 }} rows={2} key={sel} defaultValue={it.text} onChange={(e) => set({ text: e.target.value })} />}
-          {it.kind === "lower" && str("sub", tx("Second line"))}
-          {it.kind === "phone" && <div className="grid2">{str("title", tx("Notification title"))}{str("text", tx("Notification"))}</div>}
-          {it.kind === "counter" && <div className="grid2">{num("from", tx("Start"))}{num("to", tx("End"))}{str("prefix", tx("Prefix"))}{str("suffix", tx("Suffix"))}</div>}
-          {it.kind === "progress" && num("value", tx("Fill 0–1"), 0.05)}
-          <div className="grid2">{num("t0", tx("Start, s"), 0.1)}{num("t1", tx("End, s"), 0.1)}</div>
-          {(textual || it.kind === "phone") && <div className="grid2">{num("size", tx("Size, px"))}{num("weight", tx("Weight"), 100)}</div>}
-          <div className="grid2">{color("color", tx("Colour"))}{color("bg", tx("Background"))}{textual && color("stroke", tx("Outline"))}</div>
-          <div className="grid2">{num("radius", tx("Corner"))}{num("rot", tx("Angle"))}{num("scale", tx("Scale"), 0.05)}{num("opacity", tx("Opacity"), 0.05)}</div>
-          <div className="grid2">
-            {num("fade", tx("Transition, s"), 0.05)}
-            {["counter", "marker", "arrow", "phone", "lower", "progress"].includes(it.kind) && num("reveal", tx("Draw-on, s"), 0.1)}
-          </div>
-          <div className="grid2">
-            <div className="field"><label>{tx("In / out")}</label><select className="select" value={it.anim || "fade"} onChange={(e) => set({ anim: e.target.value })}><option value="fade">{tx("Fade")}</option><option value="slide-up">{tx("Slide up")}</option><option value="slide-left">{tx("Slide in")}</option><option value="pop">{tx("Pop")}</option></select></div>
-            <div className="field"><label>{tx("Attached to (rig)")}</label><select className="select" value={it.parent || ""} onChange={(e) => set({ parent: e.target.value || undefined })}><option value="">{tx("None")}</option>{items.filter((x) => x.id !== sel).map((x) => <option key={x.id} value={x.id}>{x.text || x.kind} · {x.id.slice(-4)}</option>)}</select></div>
-          </div>
-          <div className="stack" style={{ gap: 6 }}>
-            <div className="rowx"><h2 className="grow">{tx("Keyframes")}</h2><button className="btn sm" onClick={keyHere}><Diamond />{r2(t)} {tx("s")}</button></div>
-            {!it.keys?.length && <span className="muted" style={{ fontSize: 12 }}>{tx("Move the playhead, place the box and add a key. With keys, dragging saves to that second.")}</span>}
-            {(it.keys || []).map((k, i) => (
-              <div key={i} className="rowx" style={{ fontSize: 12 }}>
-                <span className="num" style={{ width: 52 }}>{k.t} {tx("s")}</span>
-                <span className="muted num grow">{Math.round(k.x ?? 0)},{Math.round(k.y ?? 0)}{k.rot ? ` ${k.rot}°` : ""}{k.scale !== undefined && k.scale !== 1 ? ` ×${k.scale}` : ""}</span>
-                <select className="select" style={{ width: 96, height: 28 }} value={k.ease || "inOut"} onChange={(e) => set({ keys: it.keys!.map((x, j) => (j === i ? { ...x, ease: e.target.value } : x)) })}>
-                  {["inOut", "out", "in", "linear", "back"].map((e) => <option key={e}>{e}</option>)}
-                </select>
-                <button className="btn icon sm ghost" onClick={() => set({ keys: it.keys!.filter((_, j) => j !== i) })}><Trash2 /></button>
-              </div>
-            ))}
-          </div>
-          {setPathFor && (
-            <div className="stack" style={{ gap: 6 }}>
-              <div className="rowx">
-                <h2 className="grow">{tx("Motion path")}</h2>
-                <button className={`btn sm ${pathFor === sel ? "primary" : ""}`} onClick={() => setPathFor(pathFor === sel ? "" : sel)}>{pathFor === sel ? tx("Finish") : it.path?.length ? tx("Add points") : tx("Draw path")}</button>
-                {it.path?.length ? <button className="btn icon sm ghost" title={tx("Delete path")} onClick={() => { set({ path: undefined }); setPathFor(""); }}><Trash2 /></button> : null}
-              </div>
-              <span className="muted" style={{ fontSize: 12, lineHeight: "18px" }}>{pathFor === sel ? tx("Click the path's points on the frame in order; press Done when finished.") : it.path?.length >= 2 ? tx("{0} points: the layer follows this path from {1} to {2} s.", it.path.length, it.t0, it.t1) : tx("The layer follows the path you draw, from its start to its end.")}</span>
-              {it.path?.length >= 2 && (
-                <div className="grid2">
-                  <div className="field"><label>{tx("Speed curve")}</label><select className="select" value={it.pathEase || "inOut"} onChange={(e) => set({ pathEase: e.target.value })}>{["inOut", "out", "in", "linear", "back"].map((x) => <option key={x}>{x}</option>)}</select></div>
-                  <div className="field"><label>{tx("Face its direction")}</label><input type="checkbox" checked={!!it.pathTurn} onChange={(e) => set({ pathTurn: e.target.checked || undefined })} /></div>
-                </div>
-              )}
-            </div>
-          )}
-          <button className="btn sm ghost" onClick={() => { L.update(items.filter((x) => x.id !== sel).map((x) => (x.parent === sel ? { ...x, parent: undefined } : x))); setSel(""); }}><Trash2 />{tx("Delete layer")}</button>
-        </div>
-      )}
-    </div>
-  );
+/** Something dragged from the Add panel onto the frame: the panel puts its handler here. */
+export const DROP: { fn: null | ((payload: Json, x: number, y: number) => void); sound: null | ((src: string, at: number) => void) } = { fn: null, sound: null };
+
+/** A drop on the frame at (px, py): pictures, text files, or an item from the Add panel. */
+export async function dropOnFrame(e: React.DragEvent, px: number, py: number, L: Layers, t: number, W: number, H: number, select?: (id: string) => void) {
+  e.preventDefault();
+  const payload = e.dataTransfer.getData("application/x-linnea");
+  if (payload) {
+    try { DROP.fn?.(JSON.parse(payload), px, py); } catch { /* not ours */ }
+    return;
+  }
+  const f = e.dataTransfer.files?.[0];
+  if (!f) return;
+  if (f.type.startsWith("audio/") && DROP.sound) {
+    DROP.sound(await L.upload(f), t);
+  } else if (f.type.startsWith("video/")) {
+    if (f.size > 400e6) return;
+    const src = await L.upload(f);
+    const it = await videoItem(src, f.name.replace(/\.[^.]+$/, ""), t, t + 600, W, H, L.url.replace(/[^/]*$/, ""));
+    const pl = { ...it, x: Math.round(px - it.w / 2), y: Math.round(py - it.h / 2) };
+    L.update([...L.items, pl]);
+    select?.(pl.id);
+  } else if (f.type.startsWith("image/")) {
+    const src = await L.upload(f);
+    const w = Math.round(W * 0.4);
+    const it: Item = { id: uid(), kind: "image", src, label: f.name.replace(/\.[^.]+$/, ""), t0: r2(t), t1: r2(t + 3), x: Math.round(px - w / 2), y: Math.round(py - w / 2), w, h: w, opacity: 1, fade: 0.25, fit: "cover" };
+    L.update([...L.items, it]);
+    select?.(it.id);
+  } else if (f.type.startsWith("text/")) {
+    const text = (await f.text()).slice(0, 200);
+    const it = { ...newItem("text", t, t + 3, W, H), text, x: Math.round(px - W * 0.4), y: Math.round(py - 60) };
+    L.update([...L.items, it]);
+    select?.(it.id);
+  }
 }
 
-/** Edit boxes over the picture: drag to move, corner to resize, double-click to edit text, drop a picture. */
-export function LayerOverlay({ L, t, sel, setSel, W, H, passThrough, pathFor }: { L: Layers; t: number; sel: string; setSel: (s: string) => void; W: number; H: number; passThrough?: boolean; pathFor?: string }) {
+type Guide = { x?: number; y?: number };
+const HANDLES: [number, number, string][] = [[-1, -1, "nwse"], [0, -1, "ns"], [1, -1, "nesw"], [1, 0, "ew"], [1, 1, "nwse"], [0, 1, "ns"], [-1, 1, "nesw"], [-1, 0, "ew"]];
+
+/** Edit boxes over the picture: drag to move (Shift: one axis), any handle to resize (Shift: keep the shape,
+ *  Alt: from the centre), the round handle to turn (Shift: 15° steps). Edges snap to the frame's edges and
+ *  centre and to the other layers; Alt while dragging turns snapping off. Shift-click selects several. */
+export function LayerOverlay({ L, t, sel, setSel, W, H, passThrough, pathFor, multi, setMulti, snap = true, others, onMenu, view }: {
+  L: Layers; t: number; sel: string; setSel: (s: string) => void; W: number; H: number; passThrough?: boolean; pathFor?: string;
+  multi?: string[]; setMulti?: (ids: string[]) => void; snap?: boolean; others?: { x: number; y: number; w: number; h: number }[]; onMenu?: (x: number, y: number, id: string) => void;
+  /** the preview's scale (screen px per frame px), when the page knows it: handles keep their size when zooming */
+  view?: number;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState("");
-  const [ghost, setGhost] = useState<Item | null>(null);
-  const items = ghost ? L.items.map((x) => (x.id === ghost.id ? ghost : x)) : L.items;
-  const write = (it: Item, p: Json) => {
-    // with keyframes, a move becomes a key at this second
-    if (it.keys?.length) {
-      const s = evalItem(items, it, t);
-      const keys = it.keys.filter((k) => Math.abs(k.t - t) > 0.02);
-      const old = it.keys.find((k) => Math.abs(k.t - t) <= 0.02);
-      return { ...it, keys: [...keys, { ...(old || { t: r2(t), ease: "inOut" }), x: Math.round(s.x), y: Math.round(s.y), w: Math.round(s.w), h: Math.round(s.h), ...p }].sort((a, b) => a.t - b.t) };
-    }
-    return { ...it, ...p };
+  const [ghost, setGhost] = useState<Item[] | null>(null);
+  const [guides, setGuides] = useState<Guide[]>([]);
+  const [readout, setReadout] = useState("");
+  const [k0, setK] = useState(2);
+  const k = view ? 1 / view : k0;
+  useEffect(() => {
+    const ro = new ResizeObserver(() => { const r = ref.current?.getBoundingClientRect(); if (r?.width) setK(W / r.width); });
+    if (ref.current) ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, [W]);
+  const items = ghost || L.items;
+  const chosen = multi && multi.length ? multi : sel ? [sel] : [];
+  const pick = (id: string, add: boolean) => {
+    if (add && setMulti) {
+      const base = chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id];
+      setMulti(base);
+      setSel(base.includes(id) ? id : base[base.length - 1] || "");
+    } else if (!chosen.includes(id) || chosen.length < 2) {
+      setMulti?.([id]);
+      setSel(id);
+    } else setSel(id);
   };
-  const start = (e: React.PointerEvent, it: Item, mode: "move" | "size") => {
+  const begin = (e: React.PointerEvent, it: Item, mode: "move" | "size" | "rot", hx = 0, hy = 0) => {
+    if (e.button !== 0) return;
     e.stopPropagation();
-    setSel(it.id);
-    const r = ref.current!.getBoundingClientRect();
-    const k = W / r.width;
+    // a layer inside a group: the first click takes the whole group, a click once the group (or something in
+    // it) is chosen takes the layer itself; Ctrl / Cmd goes straight to the layer
+    if (mode === "move" && !e.ctrlKey && !e.metaKey) {
+      const top = topOf(L.items, it);
+      if (top !== it) {
+        const inside = withInside(L.items, [top.id]);
+        if (!chosen.some((c) => inside.includes(c))) it = top;
+      }
+    }
+    const additive = e.shiftKey && mode === "move";
+    pick(it.id, additive);
+    if (additive) return;
+    const base = L.items;
+    const ids = mode === "move" && chosen.includes(it.id) ? chosen : [it.id];
+    const movers = base.filter((x) => ids.includes(x.id) && !x.locked);
+    if (!movers.length) return;
+    const s0 = evalItem(base, it, t);
+    const own0 = evalItem(base, { ...it, parent: undefined }, t);
     const [x0, y0] = [e.clientX, e.clientY];
-    const s0 = evalItem(items, it, t);
-    let last: Item | null = null;
+    const box = (e.currentTarget as HTMLElement).closest("[data-layer]")?.getBoundingClientRect();
+    const [cx, cy] = box ? [box.left + box.width / 2, box.top + box.height / 2] : [x0, y0];
+    const a0 = Math.atan2(y0 - cy, x0 - cx);
+    // what the moving edges can snap to
+    const vis = base.filter((x) => !ids.includes(x.id) && !x.hidden && t >= x.t0 && t < x.t1).map((x) => evalItem(base, x, t)).concat(others || []);
+    const VX = [0, W / 2, W, ...vis.flatMap((b) => [b.x, b.x + b.w / 2, b.x + b.w])];
+    const VY = [0, H / 2, H, ...vis.flatMap((b) => [b.y, b.y + b.h / 2, b.y + b.h])];
+    let last: Item[] | null = null;
     const mv = (ev: PointerEvent) => {
-      const dx = (ev.clientX - x0) * k, dy = (ev.clientY - y0) * k;
+      let dx = (ev.clientX - x0) * k, dy = (ev.clientY - y0) * k;
       if (!last && Math.abs(dx) + Math.abs(dy) < 3 * k) return;   // a click, not a drag
-      const p = mode === "move" ? { x: Math.round(s0.x + dx), y: Math.round(s0.y + dy) } : { w: Math.max(16, Math.round(s0.w + dx)), h: Math.max(16, Math.round(s0.h + dy)) };
-      last = write(it, p);
-      setGhost(last);
-      L.preview(L.items.map((x) => (x.id === it.id ? last! : x)));
+      const g: Guide[] = [];
+      let next: Item[];
+      if (mode === "move") {
+        if (ev.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+        if (snap && !ev.altKey) {
+          const th = 7 * k;
+          const best = (vals: number[], at: number[]) => { let d = Infinity, v = 0; for (const a of at) for (const c of vals) if (Math.abs(c - a) < Math.abs(d)) { d = c - a; v = c; } return Math.abs(d) <= th ? { d, v } : null; };
+          const bx = best(VX, [s0.x + dx, s0.x + dx + s0.w / 2, s0.x + dx + s0.w]), by = best(VY, [s0.y + dy, s0.y + dy + s0.h / 2, s0.y + dy + s0.h]);
+          if (bx && !(ev.shiftKey && dx === 0)) { dx += bx.d; g.push({ x: bx.v }); }
+          if (by && !(ev.shiftKey && dy === 0)) { dy += by.d; g.push({ y: by.v }); }
+        }
+        next = base.map((x) => (movers.includes(x) ? shift(base, x, t, Math.round(dx), Math.round(dy)) : x));
+        setReadout(`${Math.round(s0.x + dx)}, ${Math.round(s0.y + dy)}`);
+      } else if (mode === "size" && it.kind === "group") {
+        // a group grows and shrinks as a whole, around its centre
+        const cxs = (box ? box.left + box.width / 2 : x0), cys = (box ? box.top + box.height / 2 : y0);
+        const f = Math.max(0.05, Math.hypot(ev.clientX - cxs, ev.clientY - cys) / Math.max(1, Math.hypot(x0 - cxs, y0 - cys)));
+        const sc = Math.round(own0.scale * f * 100) / 100;
+        next = base.map((x) => (x.id === it.id ? setProp(base, x, t, "scale", sc) : x));
+        setReadout(`×${sc}`);
+      } else if (mode === "size") {
+        const th = (s0.rot * Math.PI) / 180, sc = s0.scale || 1, cs = Math.cos(th), sn = Math.sin(th);
+        const lx = (dx * cs + dy * sn) / sc, ly = (-dx * sn + dy * cs) / sc;
+        let dw = hx * lx, dh = hy * ly;
+        const corner = hx !== 0 && hy !== 0;
+        const keep = (it.kind === "image" || it.kind === "puppet" || it.kind === "ellipse" && it.w === it.h) !== ev.shiftKey;
+        if (keep) {
+          if (corner) { const f = Math.abs(dw / s0.w) > Math.abs(dh / s0.h) ? (s0.w + dw) / s0.w : (s0.h + dh) / s0.h; dw = s0.w * (f - 1); dh = s0.h * (f - 1); }
+          else if (hx === 0) dw = s0.w * (dh / s0.h); else dh = s0.h * (dw / s0.w);
+        }
+        if (ev.altKey) { dw *= 2; dh *= 2; }
+        const w = Math.max(8, s0.w + dw), h = Math.max(8, s0.h + dh);
+        dw = w - s0.w; dh = h - s0.h;
+        const cl = ev.altKey ? 0 : (hx * dw) / 2, cm = ev.altKey ? 0 : (hy * dh) / 2;
+        const ncx = s0.x + s0.w / 2 + (cl * cs - cm * sn) * sc, ncy = s0.y + s0.h / 2 + (cl * sn + cm * cs) * sc;
+        let n = it;
+        const P = (p: string, v: number) => { n = setProp(base, n, t, p, v); };
+        P("w", Math.round(w)); P("h", Math.round(h));
+        if (!(Array.isArray(it.path) && it.path.length)) { P("x", Math.round(own0.x + (ncx - w / 2 - s0.x))); P("y", Math.round(own0.y + (ncy - h / 2 - s0.y))); }
+        next = base.map((x) => (x.id === it.id ? n : x));
+        setReadout(`${Math.round(w)} × ${Math.round(h)}`);
+      } else {
+        const a = Math.atan2(ev.clientY - cy, ev.clientX - cx);
+        let rot = own0.rot + ((a - a0) * 180) / Math.PI;
+        rot = ev.shiftKey ? Math.round(rot / 15) * 15 : Math.round(rot * 10) / 10;
+        if (rot > 180) rot -= 360; else if (rot < -180) rot += 360;
+        next = base.map((x) => (x.id === it.id ? setProp(base, x, t, "rot", rot) : x));
+        setReadout(`${rot}°`);
+      }
+      setGuides(g);
+      last = next;
+      setGhost(next);
+      L.preview(next);
     };
     const up = () => {
       window.removeEventListener("pointermove", mv);
       window.removeEventListener("pointerup", up);
-      if (last) L.update(L.items.map((x) => (x.id === it.id ? last! : x)));
+      if (last) L.update(last);
       setGhost(null);
+      setGuides([]);
+      setReadout("");
     };
     window.addEventListener("pointermove", mv);
     window.addEventListener("pointerup", up);
   };
-  const drop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    const f = e.dataTransfer.files?.[0];
-    if (!f) return;
-    const r = ref.current!.getBoundingClientRect();
-    const px = ((e.clientX - r.left) / r.width) * W, py = ((e.clientY - r.top) / r.height) * H;
-    if (f.type.startsWith("image/")) {
-      const src = await L.upload(f);
-      const w = W * 0.4;
-      const it: Item = { id: "l" + Date.now().toString(36), kind: "image", src, t0: r2(t), t1: r2(t + 3), x: Math.round(px - w / 2), y: Math.round(py - w / 2), w, h: w, opacity: 1, fade: 0.25 };
-      L.update([...items, it]);
-      setSel(it.id);
-    } else if (f.type.startsWith("text/")) {
-      const text = (await f.text()).slice(0, 200);
-      const it = { ...newItem("text", t, t + 3, W, H), text, x: Math.round(px - W * 0.4), y: Math.round(py - 60) };
-      L.update([...items, it]);
-      setSel(it.id);
-    }
-  };
-  const hs = W / 60, lw = W / 400;
+  const lw = 1.5 * k;
   // drawing a motion path: every click on the picture is the next point
   const down = (e: React.PointerEvent) => {
     if (pathFor) {
@@ -307,33 +255,57 @@ export function LayerOverlay({ L, t, sel, setSel, W, H, passThrough, pathFor }: 
       return;
     }
     setSel("");
+    setMulti?.([]);
     setEditing("");
   };
+  const drop = (e: React.DragEvent) => {
+    const r = ref.current!.getBoundingClientRect();
+    dropOnFrame(e, ((e.clientX - r.left) / r.width) * W, ((e.clientY - r.top) / r.height) * H, L, t, W, H, (id) => { setSel(id); setMulti?.([id]); });
+  };
   const shown = items.filter((x) => Array.isArray(x.path) && x.path.length && (x.id === sel || x.id === pathFor));
+  const single = chosen.length <= 1;
   return (
     <div ref={ref} style={{ position: "absolute", inset: 0, pointerEvents: passThrough && !pathFor ? "none" : undefined, cursor: pathFor ? "crosshair" : undefined }} onPointerDown={down} onDragOver={(e) => e.preventDefault()} onDrop={drop}>
-      {shown.length > 0 && (
-        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+      {(shown.length > 0 || guides.length > 0) && (
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible", zIndex: 3 }}>
           {shown.map((x) => (
             <g key={x.id}>
               <polyline points={x.path.map((p: number[]) => p.join(",")).join(" ")} fill="none" style={{ stroke: "var(--accent)" }} strokeWidth={lw * 2} strokeDasharray={`${lw * 6} ${lw * 4}`} />
               {x.path.map((p: number[], i: number) => <circle key={i} cx={p[0]} cy={p[1]} r={lw * 5} style={{ fill: i === 0 ? "#86b991" : "var(--accent)" }} />)}
             </g>
           ))}
+          {guides.map((g, i) => (g.x !== undefined ? <line key={i} x1={g.x} x2={g.x} y1={0} y2={H} stroke="#ff4fa3" strokeWidth={lw} /> : <line key={i} y1={g.y} y2={g.y} x1={0} x2={W} stroke="#ff4fa3" strokeWidth={lw} />))}
         </svg>
       )}
-      {items.filter((x) => t >= x.t0 && t < x.t1).map((x) => {
+      {items.filter((x) => t >= x.t0 && t < x.t1 && groupsOf(items, x).every((g) => t >= g.t0 && t < g.t1)).map((x) => {
         const s = evalItem(items, x, t);
-        const on = x.id === sel;
-        const col = x.hidden ? "rgba(160,160,160,.7)" : on ? "var(--accent)" : "rgba(255,255,255,.5)";
+        const on = chosen.includes(x.id);
+        const grp = x.kind === "group";
+        if (grp && !on) return null;
+        const main = x.id === sel;
+        const col = x.hidden ? "rgba(160,160,160,.7)" : on ? "var(--accent)" : "rgba(255,255,255,.45)";
+        const hs = (11 * k) / (s.scale || 1);
+        const bw = lw / (s.scale || 1);
         return (
-          <div key={x.id} onPointerDown={(e) => start(e, x, "move")} onDoubleClick={() => ["text", "marker", "lower"].includes(x.kind) && setEditing(x.id)}
-            style={{ pointerEvents: pathFor ? "none" : "auto", position: "absolute", left: s.x, top: s.y, width: s.w, height: s.h, outline: `${lw}px ${x.hidden ? "dotted" : on ? "solid" : "dashed"} ${col}`, background: x.hidden ? "repeating-linear-gradient(45deg, rgba(160,160,160,.12) 0 8px, transparent 8px 16px)" : undefined, cursor: "move", transform: `rotate(${s.rot}deg) scale(${s.scale})` }}>
-            {on && <div onPointerDown={(e) => start(e, x, "size")} style={{ position: "absolute", right: -hs / 2, bottom: -hs / 2, width: hs, height: hs, background: "var(--accent)", borderRadius: hs / 4, cursor: "nwse-resize" }} />}
+          <div key={x.id} data-layer={x.id} onPointerDown={(e) => begin(e, x, "move")} onContextMenu={(e) => { if (!onMenu) return; e.preventDefault(); e.stopPropagation(); if (!on) pick(x.id, false); onMenu(e.clientX, e.clientY, x.id); }}
+            onDoubleClick={() => ["text", "marker", "lower"].includes(x.kind) && !x.locked && setEditing(x.id)}
+            title={layerName(x)}
+            style={{ pointerEvents: pathFor || x.locked || grp ? "none" : "auto", position: "absolute", left: s.x, top: s.y, width: s.w, height: s.h, outline: `${bw}px ${x.hidden ? "dotted" : on ? "solid" : "dashed"} ${col}`, outlineOffset: grp ? 6 * k : undefined, background: x.hidden ? "repeating-linear-gradient(45deg, rgba(160,160,160,.12) 0 8px, transparent 8px 16px)" : undefined, cursor: "move", transform: `rotate(${s.rot}deg) scale(${s.scale})`, zIndex: main ? 2 : 1 }}>
+            {main && single && !x.locked && HANDLES.filter(([hx, hy]) => !grp || (hx && hy)).map(([hx, hy, c]) => (
+              <div key={`${hx}${hy}`} onPointerDown={(e) => begin(e, x, "size", hx, hy)}
+                style={{ position: "absolute", left: `calc(${((hx + 1) / 2) * 100}% - ${hs / 2}px)`, top: `calc(${((hy + 1) / 2) * 100}% - ${hs / 2}px)`, width: hs, height: hs, background: "#fff", border: `${bw}px solid var(--accent)`, borderRadius: hx && hy ? hs / 4 : hs / 2, cursor: `${c}-resize`, boxSizing: "border-box", pointerEvents: "auto" }} />
+            ))}
+            {main && single && !x.locked && (
+              <>
+                <div style={{ position: "absolute", left: "50%", top: -hs * 2.4, width: bw, height: hs * 2.4, background: "var(--accent)", pointerEvents: "none" }} />
+                <div title={tx("Turn (Shift: 15° steps)")} onPointerDown={(e) => begin(e, x, "rot")} style={{ pointerEvents: "auto", position: "absolute", left: `calc(50% - ${hs * 0.6}px)`, top: -hs * 3.4, width: hs * 1.2, height: hs * 1.2, borderRadius: "50%", background: "var(--accent)", border: `${bw}px solid #fff`, cursor: "grab", boxSizing: "border-box" }} />
+              </>
+            )}
+            {main && readout && <div style={{ position: "absolute", left: 0, top: "100%", marginTop: hs, transform: `scale(${k / (s.scale || 1)})`, transformOrigin: "0 0", font: "600 11px var(--mono)", background: "var(--accent)", color: "var(--on-accent)", padding: "1px 6px", borderRadius: 4, whiteSpace: "nowrap", pointerEvents: "none" }}>{readout}</div>}
             {editing === x.id && (
               <textarea autoFocus defaultValue={x.text} onPointerDown={(e) => e.stopPropagation()}
-                onBlur={(e) => { L.update(items.map((y) => (y.id === x.id ? { ...y, text: e.target.value } : y))); setEditing(""); }}
-                onKeyDown={(e) => { if (e.key === "Escape" || (e.key === "Enter" && !e.shiftKey)) (e.target as HTMLTextAreaElement).blur(); }}
+                onBlur={(e) => { L.update(L.items.map((y) => (y.id === x.id ? { ...y, text: e.target.value } : y))); setEditing(""); }}
+                onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape" || (e.key === "Enter" && !e.shiftKey)) (e.target as HTMLTextAreaElement).blur(); }}
                 style={{ position: "absolute", inset: 0, width: "100%", height: "100%", font: `${x.weight || 800} ${x.size || 72}px "Segoe UI", sans-serif`, textAlign: (x.align as any) || "center", color: "#fff", background: "rgba(0,0,0,.55)", border: 0, outline: `${lw * 2}px solid var(--accent)`, resize: "none", padding: 0 }} />
             )}
           </div>
@@ -341,6 +313,63 @@ export function LayerOverlay({ L, t, sel, setSel, W, H, passThrough, pathFor }: 
       })}
     </div>
   );
+}
+
+/** Keys for the selected layers, wherever the picture is being edited: Delete, Ctrl+D duplicate, Ctrl+C / X / V,
+ *  arrows nudge (Shift: 10 px), Ctrl+] / [ order, Alt+[ / ] trim to the playhead, S split, H hide, Ctrl+L lock,
+ *  Ctrl+A select all at this second, Esc deselect. Runs before the page's own keys, and only when it acts. */
+export function useLayerKeys({ L, t, sel, setSel, multi, setMulti, active, say }: { L: Layers; t: number; sel: string; setSel: (s: string) => void; multi?: string[]; setMulti?: (ids: string[]) => void; active: boolean; say?: (s: string) => void }) {
+  const st = useRef({ L, t, sel, multi, active });
+  st.current = { L, t, sel, multi, active };
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const { L, t, sel, multi, active } = st.current;
+      if (!active || /INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement).tagName) || (e.target as HTMLElement).isContentEditable) return;
+      const ids = multi && multi.length ? multi : sel ? [sel] : [];
+      const mod = e.ctrlKey || e.metaKey;
+      const items = L.items;
+      const done = () => { e.preventDefault(); e.stopImmediatePropagation(); };
+      const choose = (list: string[]) => { setSel(list[list.length - 1] || ""); setMulti?.(list); };
+      const k = e.key.toLowerCase();
+      if (mod && k === "v") {
+        const got = pasteItems(t);
+        if (!got.length) return;
+        done();
+        L.update([...items, ...got]);
+        choose(got.map((x) => x.id));
+        say?.(tx("{0} layers pasted", got.length));
+        return;
+      }
+      if (mod && k === "a" && !e.shiftKey) { done(); choose(items.filter((x) => t >= x.t0 && t < x.t1 && !x.locked).map((x) => x.id)); return; }
+      if (!ids.length) return;
+      const picked = items.filter((x) => ids.includes(x.id));
+      if (mod && k === "g") {
+        done();
+        if (e.shiftKey) { const out = picked.filter((x) => x.kind === "group").reduce((acc, g) => { const r = ungroup(acc.items, g.id); return { items: r.items, ids: [...acc.ids, ...r.ids] }; }, { items, ids: [] as string[] }); L.update(out.items); choose(out.ids); }
+        else { const r = group(items, ids, t); if (r.id) { L.update(r.items); choose([r.id]); } }
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") { done(); L.update(remove(items, ids)); choose([]); }
+      else if (e.key === "Escape") { done(); choose([]); }
+      else if (mod && k === "d") { done(); const r = duplicate(items, ids); L.update(r.items); choose(r.ids); }
+      else if (mod && k === "c") { done(); copyItems(picked, items); say?.(tx("{0} layers copied", picked.length)); }
+      else if (mod && k === "x") { done(); copyItems(picked, items); L.update(remove(items, ids)); choose([]); }
+      else if (mod && k === "l") { done(); const lock = !picked.every((x) => x.locked); L.update(replace(items, ids, (x) => ({ ...x, locked: lock || undefined }))); }
+      else if (mod && (e.key === "]" || e.key === "[")) { done(); L.update(reorder(items, ids, e.key === "]" ? (e.shiftKey ? "top" : "up") : e.shiftKey ? "bottom" : "down")); }
+      else if (e.altKey && (e.key === "[" || e.key === "]")) { done(); L.update(trim(items, ids, t, e.key === "[" ? "start" : "end")); }
+      else if (!mod && !e.altKey && k === "s" && ids.length === 1) { const r = split(items, ids[0], t); if (r.id) { done(); L.update(r.items); choose([r.id]); } }
+      else if (!mod && !e.altKey && k === "h") { done(); const hide = !picked.every((x) => x.hidden); L.update(replace(items, ids, (x) => ({ ...x, hidden: hide || undefined }))); }
+      else if (!mod && e.key.startsWith("Arrow")) {
+        done();
+        const d = e.shiftKey ? 10 : 1;
+        const dx = e.key === "ArrowLeft" ? -d : e.key === "ArrowRight" ? d : 0, dy = e.key === "ArrowUp" ? -d : e.key === "ArrowDown" ? d : 0;
+        L.update(items.map((x) => (ids.includes(x.id) && !x.locked ? shift(items, x, t, dx, dy) : x)));
+      }
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, []);
+  return { canPaste: hasClip };
 }
 
 /** A W x H stage scaled to fill its parent's width (for pages drawn over a scaled video). */
@@ -357,4 +386,25 @@ export function ScaledStage({ W, H, children }: { W: number; H: number; children
       <div style={{ position: "absolute", left: 0, top: 0, width: W, height: H, transform: `scale(${s})`, transformOrigin: "0 0" }}>{children}</div>
     </div>
   );
+}
+
+/** Read a video's size and length (from the film's folder), for a new video layer. */
+export function videoMeta(src: string): Promise<{ w: number; h: number; dur: number }> {
+  return new Promise((ok) => {
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.muted = true;
+    const done = () => ok({ w: v.videoWidth || 1920, h: v.videoHeight || 1080, dur: isFinite(v.duration) ? v.duration : 5 });
+    v.onloadedmetadata = done;
+    v.onerror = done;
+    setTimeout(done, 8000);
+    v.src = src;
+  });
+}
+/** A video layer filling the frame as far as it fits, from t for the video's length (up to `end`). */
+export async function videoItem(src: string, label: string, t: number, end: number, W: number, H: number, base = ""): Promise<Item> {
+  const m = await videoMeta(base + src);
+  const s = Math.min(W / m.w, H / m.h);
+  const w = Math.round(m.w * s), h = Math.round(m.h * s);
+  return { id: uid("v"), kind: "video", src, label, t0: r2(t), t1: r2(Math.min(end, t + m.dur)), x: Math.round((W - w) / 2), y: Math.round((H - h) / 2), w, h, opacity: 1, fade: 0, fit: "cover", sound: true, fileDur: Math.round(m.dur * 100) / 100 };
 }

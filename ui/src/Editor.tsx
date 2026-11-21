@@ -5,7 +5,8 @@ import { CardActions, deleteItem, renameItem } from "./Manage";
 import { Activity, dur, fetchJson, fileUrl, Json, parseCommand, runJob, tc, tool } from "./api";
 import { tr } from "./App";
 import { AiPanel, PublishButton } from "./Ai";
-import { LayerOverlay, LayersPanel, ScaledStage, useLayers } from "./Layers";
+import { LayerOverlay, ScaledStage, useLayerKeys, useLayers } from "./Layers";
+import { LayersPanel } from "./LayerPanels";
 import { Lane, LANE_H, TItem, TrackLane } from "./Tracks";
 import { useLoad } from "./api";
 
@@ -123,6 +124,8 @@ export function Editor({ id, act, say, back }: { id: string; act: Activity; say:
   });
   const total: number = info?.seconds || 0;
   const fps = reel.fps || 30;
+  // the same keys over a reel's layers as over a film's: Delete, Ctrl+D, Ctrl+C / V, arrows, S, H…
+  useLayerKeys({ L, t, sel: sel2d, setSel: setSel2d, active: tab === "layers" && !playing, say });
   const media = proj?.media || {};
 
   const segIndex = useCallback((x: number) => {
@@ -291,7 +294,7 @@ export function Editor({ id, act, say, back }: { id: string; act: Activity; say:
           {tab === "script" && <ScriptPanel words={words} reel={reel} takes={takes} full={reel.clip ? [{ a: reel.clip.a, b: reel.clip.b }] : [{ a: 0, b: media.duration || 0 }]} segs={segs} t={t} seek={seek} setTakes={setTakes} run={run} hasWords={!!proj.transcript} busy={!!busy} audition={audition} playing={playing} say={say} />}
           {tab === "style" && <StylePanel reel={reel} report={report} run={run} patch={patch} />}
           {tab === "beats" && <BeatsPanel reel={reel} report={report} origNow={origNow} t={t} seek={seek} run={run} patch={patch} sel={selTrack} setSel={setSelTrack} />}
-          {tab === "layers" && <LayersPanel L={L} t={t} W={reel.width || 1080} H={reel.height || 1920} dur={total} sel={sel2d} setSel={setSel2d} />}
+          {tab === "layers" && <LayersPanel L={L} t={t} W={reel.width || 1080} H={reel.height || 1920} dur={total} sel={sel2d} setSel={setSel2d} say={say} />}
           {tab === "notes" && <NotesPanel proj={proj} rid={rid} t={t} seek={seek} reload={load} say={say} />}
         </div>
       </div>

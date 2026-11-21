@@ -53,8 +53,31 @@ Claude writes a film as a web page whose `renderOut(t)` draws second `t`. Linnea
 from the code, with no render in between, and reloads the preview the moment Claude saves a change.
 
 - Click any element on the frame to select it: move, scale, rotate, fade, hide, retime, keyframe.
-- Add your own layers on top: text, pictures, counters, handwriting, arrows, a phone, lower thirds,
-  progress bars and puppets. Give any of them a motion path or rig it to a parent.
+- A layout like a desktop editor: **Layers / Add / Notes** on the left, **Properties** on the right, a
+  zoomable timeline below with one lane per layer. Everything is also in the **Edit** and **View** menus,
+  on right-click, and in a command palette (`Ctrl+K`).
+- Add your own layers on top: titles, subtitles, caption boxes, typewriter text, counters, handwriting,
+  boxes, circles, rings, gradients, arrows, progress bars, pictures, a phone, lower thirds and puppets.
+  Click a tile to add it at the playhead, or drag it onto the frame.
+- On the frame: eight handles and a turn handle, smart guides that snap to the frame and to the other layers,
+  Shift-click to select several, align and spread them, arrow keys to nudge.
+- Each property (X, Y, size, angle, scale, opacity, and a puppet's numbers) has its own keyframe diamond;
+  numbers scrub by dragging their label. One click adds motion presets (rise, drop, slow zoom, pulse, float,
+  shake, wiggle, spin), separate in and out animations (slide, pop, zoom, spin, blur, wipe), shadows, blend
+  modes, gradients, borders, mirroring, typewriter text and text looks. Save any layer as your own preset.
+- On the timeline: split at the playhead (`S`), trim to the playhead (`Alt+[` / `Alt+]`), drag keyframes and
+  puppet states, snapping to the playhead, scene cuts and other bars, `Ctrl` + wheel to zoom, `I` / `O` for a range.
+- **Video and sound on the film**: drop a video on the frame (or Add → Video). It plays in the preview and every
+  rendered frame shows its exact frame; trim where it starts, speed it up, loop it, crop it, round its corners.
+  Its sound goes into the film's mix as a clip that follows the layer. Add sounds from Add → Sound or by dropping them.
+- **Groups**: `Ctrl+G` puts layers in a group that moves, turns, scales and fades them together; click once for
+  the group, again for the layer inside. Groups fold in the layer stack and take their layers along on the timeline.
+- **Curves and colours**: every keyframe has a curve editor (named eases or your own Bézier), and colours, shadows,
+  sizes and other style values can be keyed and change smoothly over time.
+- **Zoom the frame**: fit, 25–400 % or Ctrl + wheel around the pointer; the middle button drags it around.
+- **Ready scenes**: a presenter with a speech bubble, like and subscribe, celebration, countdown, checklist,
+  callout, quote card, before / after and a title intro, each placed as one group.
+- Copy and paste layers, even from one film to another; copy and paste a layer's look.
 - Undo and redo across everything, with `Ctrl+Z` / `Ctrl+Y`.
 - **Film assistant**: ask in plain words and the assistant edits `film.js`, checks the page, looks at the
   frames it changed and shows every step. Each request can be shown as a diff and taken back.
@@ -112,6 +135,14 @@ from the code, with no render in between, and reloads the preview the moment Cla
   own picture, fixes it and saves it.
 - Turn any picture into a puppet, with its background removed by a local model.
 - States blend smoothly into each other; linked films pick up library updates.
+- Ready to use: a stick figure (walk, wave, cheer, jump, point, think, and it talks), a narrator, a tick or
+  cross that draws itself, a clicking mouse pointer, a heart, confetti, a countdown ring, sparkles, a pencil
+  and a speech bubble.
+- **Puppets from bones**: build a skeleton (or start from a person or a chain), pose it by dragging bones and key
+  poses for each state; parts can be shapes or cut-out pictures. **Puppets from frames**: pick several pictures
+  and they play in turn like a flip book.
+- In a film, start a state by clicking it at the playhead, see and drag states on the timeline, key a
+  puppet's numbers over time, mirror it, or play it faster or slower.
 
 ### And more
 
