@@ -53,8 +53,21 @@ Claude writes a film as a web page whose `renderOut(t)` draws second `t`. Linnea
 from the code, with no render in between, and reloads the preview the moment Claude saves a change.
 
 - Click any element on the frame to select it: move, scale, rotate, fade, hide, retime, keyframe.
-- Add your own layers on top: text, pictures, counters, handwriting, arrows, a phone, lower thirds,
-  progress bars and puppets. Give any of them a motion path or rig it to a parent.
+- A layout like a desktop editor: **Layers / Add / Notes** on the left, **Properties** on the right, a
+  zoomable timeline below with one lane per layer. Everything is also in the **Edit** and **View** menus,
+  on right-click, and in a command palette (`Ctrl+K`).
+- Add your own layers on top: titles, subtitles, caption boxes, typewriter text, counters, handwriting,
+  boxes, circles, rings, gradients, arrows, progress bars, pictures, a phone, lower thirds and puppets.
+  Click a tile to add it at the playhead, or drag it onto the frame.
+- On the frame: eight handles and a turn handle, smart guides that snap to the frame and to the other layers,
+  Shift-click to select several, align and spread them, arrow keys to nudge.
+- Each property (X, Y, size, angle, scale, opacity, and a puppet's numbers) has its own keyframe diamond;
+  numbers scrub by dragging their label. One click adds motion presets (rise, drop, slow zoom, pulse, float,
+  shake, wiggle, spin), separate in and out animations (slide, pop, zoom, spin, blur, wipe), shadows, blend
+  modes, gradients, borders, mirroring, typewriter text and text looks. Save any layer as your own preset.
+- On the timeline: split at the playhead (`S`), trim to the playhead (`Alt+[` / `Alt+]`), drag keyframes and
+  puppet states, snapping to the playhead, scene cuts and other bars, `Ctrl` + wheel to zoom, `I` / `O` for a range.
+- Copy and paste layers, even from one film to another; copy and paste a layer's look.
 - Undo and redo across everything, with `Ctrl+Z` / `Ctrl+Y`.
 - **Film assistant**: ask in plain words and the assistant edits `film.js`, checks the page, looks at the
   frames it changed and shows every step. Each request can be shown as a diff and taken back.
@@ -112,6 +125,11 @@ from the code, with no render in between, and reloads the preview the moment Cla
   own picture, fixes it and saves it.
 - Turn any picture into a puppet, with its background removed by a local model.
 - States blend smoothly into each other; linked films pick up library updates.
+- Ready to use: a stick figure (walk, wave, cheer, jump, point, think, and it talks), a narrator, a tick or
+  cross that draws itself, a clicking mouse pointer, a heart, confetti, a countdown ring, sparkles, a pencil
+  and a speech bubble.
+- In a film, start a state by clicking it at the playhead, see and drag states on the timeline, key a
+  puppet's numbers over time, mirror it, or play it faster or slower.
 
 ### And more
 

@@ -4,7 +4,13 @@
 // A layer: {id, kind, t0, t1, x, y, w, h, rot, scale, opacity, fade, anim, parent, keys: [{t, x, y, w, h, rot,
 // scale, opacity, ease}], ...kind fields}. Keys animate any of those properties between their times (a rig:
 // a child with `parent` moves and turns with it). Kinds: text, image, rect, counter, marker, arrow, phone,
-// lower (lower third), progress.
+// lower (lower third), progress, ellipse, puppet.
+// Look: anim (the way in) and animOut (the way out): none|fade|slide-up|slide-down|slide-left|slide-right|pop|
+// zoom|spin|blur|wipe, over `fade` seconds; blend (a canvas composite mode), shadow (colour) with shadowBlur,
+// shadowX, shadowY; blur (px); fx / fy (mirror); border + borderWidth; bg2 + gradAngle (a gradient fill).
+// Text: font, size, weight, italic, align, spacing (px), lineHeight, upper, stroke, strokeWidth, typing
+// ('chars' | 'words', revealed over `reveal` s). Image: fit (fill|cover|contain), radius. Puppet: speed,
+// pkeys [{t, p: {param: value}, ease}] animate its numeric params over the film's time.
 (function () {
   'use strict';
   let items = [];
@@ -110,18 +116,59 @@
 
   const target = () => [...document.querySelectorAll('canvas')].sort((a, b) => b.width * b.height - a.width * a.height)[0];
   const FONT = '"Segoe UI", system-ui, sans-serif';
-  function textBlock(g, it, w, h, str, color) {
+  // typing: 'chars' or 'words' reveal the text over `reveal` seconds (life 0..1)
+  function typed(str, mode, life) {
+    if (!mode || life >= 1) return str;
+    if (mode === 'words') { const p = str.split(/(\s+)/); let n = Math.floor(p.length * life), o = ''; for (let i = 0; i < n; i++) o += p[i]; return o; }
+    return str.slice(0, Math.floor(str.length * life));
+  }
+  function textBlock(g, it, w, h, str, color, life) {
     const size = it.size || 72;
     g.font = `${it.italic ? 'italic ' : ''}${it.weight || 800} ${size}px ${it.font || FONT}`;
     g.textAlign = it.align || 'center'; g.textBaseline = 'middle';
+    if (it.spacing) try { g.letterSpacing = it.spacing + 'px'; } catch (e) { /* an older browser */ }
     const tx = g.textAlign === 'left' ? (it.pad ?? size * 0.3) : g.textAlign === 'right' ? w - (it.pad ?? size * 0.3) : w / 2;
-    const lines = String(str ?? '').split('\n'), lh = size * 1.15;
+    let all = String(str ?? '');
+    if (it.upper) all = all.toLocaleUpperCase();
+    const full = all.split('\n'), lh = size * (it.lineHeight || 1.15);
+    const lines = it.typing && life !== undefined ? typed(all, it.typing, life).split('\n') : full;
     lines.forEach((ln, i) => {
-      const ty = h / 2 + (i - (lines.length - 1) / 2) * lh;
+      const ty = h / 2 + (i - (full.length - 1) / 2) * lh;
       if (it.stroke) { g.lineJoin = 'round'; g.lineWidth = it.strokeWidth || size * 0.12; g.strokeStyle = it.stroke; g.strokeText(ln, tx, ty); }
       g.fillStyle = color || it.color || '#fff'; g.fillText(ln, tx, ty);
     });
+    try { g.letterSpacing = '0px'; } catch (e) { /* an older browser */ }
   }
+  // a fill: one colour, or a gradient from bg to bg2 at gradAngle degrees
+  function paint(g, it, c, w, h) {
+    if (!it.bg2) return c;
+    const a = ((it.gradAngle ?? 90) - 90) * Math.PI / 180, r = Math.hypot(w, h) / 2, dx = Math.cos(a) * r, dy = Math.sin(a) * r;
+    const gr = g.createLinearGradient(w / 2 - dx, h / 2 - dy, w / 2 + dx, h / 2 + dy);
+    gr.addColorStop(0, c); gr.addColorStop(1, it.bg2);
+    return gr;
+  }
+  // numeric puppet params keyed over the film's time: pkeys = [{t, p: {name: value}, ease}]
+  function paramsAt(it, t) {
+    const ks = (it.pkeys || []).slice().sort((a, b) => a.t - b.t);
+    if (!ks.length) return it.params;
+    const out = Object.assign({}, it.params || {});
+    const names = new Set(); ks.forEach(k => Object.keys(k.p || {}).forEach(n => names.add(n)));
+    for (const n of names) {
+      const kk = ks.filter(k => k.p && k.p[n] !== undefined);
+      if (t <= kk[0].t) { out[n] = kk[0].p[n]; continue; }
+      if (t >= kk[kk.length - 1].t) { out[n] = kk[kk.length - 1].p[n]; continue; }
+      for (let i = 0; i < kk.length - 1; i++) {
+        const a = kk[i], b = kk[i + 1];
+        if (t >= a.t && t <= b.t) {
+          const va = a.p[n], vb = b.p[n];
+          out[n] = typeof va === 'number' && typeof vb === 'number' ? va + (vb - va) * (EASE[b.ease || 'inOut'] || EASE.inOut)((t - a.t) / Math.max(1e-6, b.t - a.t)) : va;
+          break;
+        }
+      }
+    }
+    return out;
+  }
+  window.VH2D_params = paramsAt;
   function draw(t) {
     const cv = target(); if (!cv) return;
     const g = cv.getContext('2d'); if (!g) return;
@@ -131,31 +178,60 @@
       if (t < it.t0 || t >= it.t1 || it.hidden) continue;
       const st = state(it, t);
       const fade = it.fade ?? 0.25;
-      const k = fade > 0 ? clamp(Math.min((t - it.t0) / fade, (it.t1 - t) / fade), 0, 1) : 1;
+      // the way in (anim) and the way out (animOut, the way in when not set), each over `fade` seconds
+      const kIn = fade > 0 ? clamp((t - it.t0) / fade, 0, 1) : 1, kOut = fade > 0 ? clamp((it.t1 - t) / fade, 0, 1) : 1;
+      const out = kOut < kIn;
+      const k = Math.min(kIn, kOut);
+      const anim = (out ? (it.animOut || it.anim) : it.anim) || 'fade';
       const e = 1 - Math.pow(1 - k, 3);
-      const a = st.opacity * (it.anim && it.anim !== 'fade' ? Math.min(1, k * 2) : k);
+      const a = st.opacity * (anim === 'none' || anim === 'wipe' ? 1 : anim !== 'fade' ? Math.min(1, k * 2) : k);
       if (a <= 0) continue;
       const { x, y, w, h } = st;
       const life = clamp((t - it.t0) / Math.max(0.01, (it.reveal ?? 0.8)), 0, 1);  // 0..1 for draw-on kinds
       g.save();
       g.setTransform(1, 0, 0, 1, 0, 0);
       g.globalAlpha = a;
+      if (it.blend && it.blend !== 'normal') g.globalCompositeOperation = it.blend;
+      const blur = (it.blur || 0) + (anim === 'blur' ? (1 - e) * 24 : 0);
+      if (blur > 0.05) g.filter = `blur(${blur.toFixed(2)}px)`;
+      if (it.shadow) { g.shadowColor = it.shadow; g.shadowBlur = it.shadowBlur ?? 24; g.shadowOffsetX = it.shadowX ?? 0; g.shadowOffsetY = it.shadowY ?? 8; }
       g.translate(x + w / 2, y + h / 2);
-      if (it.anim === 'slide-up') g.translate(0, (1 - e) * h * 0.6);
-      else if (it.anim === 'slide-left') g.translate((1 - e) * w * 0.4, 0);
-      else if (it.anim === 'pop') { const s = k < 1 ? 0.6 + 0.4 * e + Math.sin(e * Math.PI) * 0.08 : 1; g.scale(s, s); }
+      if (anim === 'slide-up') g.translate(0, (1 - e) * h * 0.6);
+      else if (anim === 'slide-down') g.translate(0, -(1 - e) * h * 0.6);
+      else if (anim === 'slide-left') g.translate((1 - e) * w * 0.4, 0);
+      else if (anim === 'slide-right') g.translate(-(1 - e) * w * 0.4, 0);
+      else if (anim === 'pop') { const s = k < 1 ? 0.6 + 0.4 * e + Math.sin(e * Math.PI) * 0.08 : 1; g.scale(s, s); }
+      else if (anim === 'zoom') { const s = 0.3 + 0.7 * e; g.scale(s, s); }
+      else if (anim === 'spin') { g.rotate(-(1 - e) * Math.PI / 2); g.scale(0.5 + 0.5 * e, 0.5 + 0.5 * e); }
       if (st.rot) g.rotate(st.rot * Math.PI / 180);
       if (st.scale !== 1) g.scale(st.scale, st.scale);
+      if (it.fx || it.fy) g.scale(it.fx ? -1 : 1, it.fy ? -1 : 1);
       g.translate(-w / 2, -h / 2);
-      const bg = it.bg || (it.kind === 'rect' ? (it.color || '#e9b84a') : null);
-      if (bg && it.kind !== 'lower' && it.kind !== 'progress') { g.fillStyle = bg; g.beginPath(); g.roundRect(0, 0, w, h, it.radius || 0); g.fill(); }
+      if (anim === 'wipe' && k < 1) { g.beginPath(); if (out) g.rect(w * (1 - e), -h, w * e + 1, h * 3); else g.rect(0, -h, w * e, h * 3); g.clip(); }
+      const bg = it.bg || (it.kind === 'rect' ? (it.color || '#e9b84a') : it.kind === 'ellipse' ? (it.color || '#e9b84a') : null);
+      const shape = (w2, h2) => { g.beginPath(); if (it.kind === 'ellipse') g.ellipse(w2 / 2, h2 / 2, w2 / 2, h2 / 2, 0, 0, Math.PI * 2); else g.roundRect(0, 0, w2, h2, Math.min(it.radius || 0, w2 / 2, h2 / 2)); };
+      if (bg && it.kind !== 'lower' && it.kind !== 'progress') { g.fillStyle = paint(g, it, bg, w, h); shape(w, h); g.fill(); g.shadowColor = 'transparent'; }
+      const edge = () => { if (it.border && it.borderWidth !== 0) { g.save(); g.strokeStyle = it.border; g.lineWidth = it.borderWidth || 6; shape(w, h); g.stroke(); g.restore(); } };
+      if (['rect', 'ellipse', 'text'].includes(it.kind)) edge();
       switch (it.kind) {
-        case 'puppet': drawPuppet(g, it.puppet, it.params, t - it.t0, it.states, w, h); break;
-        case 'image':
-          if (imgs[it.src]) g.drawImage(imgs[it.src], 0, 0, w, h);
+        case 'puppet': drawPuppet(g, it.puppet, paramsAt(it, t), t - it.t0, it.states, w, h, it.speed); break;
+        case 'image': {
+          const im = imgs[it.src];
+          if (!im) break;
+          g.save();
+          if (it.radius) { g.beginPath(); g.roundRect(0, 0, w, h, Math.min(it.radius, w / 2, h / 2)); g.clip(); }
+          const iw = im.naturalWidth || im.width || w, ih = im.naturalHeight || im.height || h;
+          if (it.fit === 'cover' || it.fit === 'contain') {
+            const s = it.fit === 'cover' ? Math.max(w / iw, h / ih) : Math.min(w / iw, h / ih);
+            if (it.fit === 'cover') { g.beginPath(); g.rect(0, 0, w, h); g.clip(); }
+            g.drawImage(im, (w - iw * s) / 2, (h - ih * s) / 2, iw * s, ih * s);
+          } else g.drawImage(im, 0, 0, w, h);
+          g.restore();
+          edge();
           break;
+        }
         case 'text':
-          textBlock(g, it, w, h, it.text);
+          textBlock(g, it, w, h, it.text, undefined, life);
           break;
         case 'counter': {
           const v = (it.from ?? 0) + ((it.to ?? 100) - (it.from ?? 0)) * (1 - Math.pow(1 - life, 3));
@@ -280,12 +356,12 @@
   }
   // which state plays at puppet time t: states = [{state, t0, blend}] in the puppet's own seconds. With a
   // blend (seconds; the state's own default otherwise) the one before fades out under it: s.prev, s.mix.
-  function stateAt(def, states, t) {
+  function stateAt(def, states, t, speed) {
     const S = def.states || {};
     let cur = { state: def.initial || Object.keys(S)[0] || 'idle', t0: 0 }, prev = null;
     for (const s of (states || []).slice().sort((a, b) => a.t0 - b.t0)) if (t >= s.t0) { prev = cur; cur = s; }
     const one = c => {
-      const info = S[c.state] || {}, dur = info.dur || 1, st = Math.max(0, t - (c.t0 || 0));
+      const info = S[c.state] || {}, dur = info.dur || 1, st = Math.max(0, t - (c.t0 || 0)) * (speed || 1);
       return { name: c.state, t: st, k: info.loop ? (st / dur) % 1 : clamp(st / dur, 0, 1), dur };
     };
     const s = one(cur);
@@ -309,7 +385,7 @@
     for (const [k, v] of Object.entries(def.params || {})) p[k] = v && typeof v === 'object' && 'default' in v ? v.default : v;
     return Object.assign(p, over || {});
   }
-  function drawPuppet(g, name, params, t, states, w, h) {
+  function drawPuppet(g, name, params, t, states, w, h, speed) {
     const def = puppetDef(name);
     if (!def || !def.fn) {
       g.save(); g.strokeStyle = '#7fb0ff'; g.setLineDash([12, 8]); g.lineWidth = 4; g.strokeRect(0, 0, w || 200, h || 200);
@@ -332,7 +408,8 @@
       try { def.fn(g, pp, t, st, U); } catch (e) { complain(name, e); }
       g.restore();
     };
-    const s = stateAt(def, states, t);
+    const s = stateAt(def, states, t, speed);
+    if (speed && speed !== 1) t *= speed;
     // a blend without the see-through dip of two half-faded drawings: the outgoing state stays solid while
     // the new one comes up over it, then the new one is solid while the old one fades away on top
     if (s.prev) {

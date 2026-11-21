@@ -1,15 +1,19 @@
 // Films written as code: live preview from the page itself, notes drawn on frames, the check tour, manual renders.
-import { tx } from "./i18n";
+import { lang, tx } from "./i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Redo2, SendHorizontal } from "lucide-react";
+import { SkipBack, SkipForward } from "lucide-react";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, Circle, Copy, FolderOpen, Image as ImageIcon, MousePointer2, Pause, Pen, Play, Plus, RefreshCw, Repeat, Square, Trash2, Undo2, X } from "lucide-react";
 import { Activity, dur, fetchJson, fileUrl, Json, runJob, tc, tool, useLoad } from "./api";
 import { SoundPanel } from "./Studio";
-import { LayerOverlay, LayersPanel, useLayers } from "./Layers";
+import { evalItem, LayerOverlay, useLayerKeys, useLayers } from "./Layers";
+import { AddPanel, Command, LayerStack, Menu, MenuButton, MenuItem, Palette, PuppetGrid } from "./LayerPanels";
+import { LayerInspector, MultiInspector } from "./Inspector";
+import { copyItems, copyStyle, duplicate, hasClip, keyTimes, layerName, moveKeyTime, pasteItems, pasteStyle, r2 as rr2, remove, reorder, replace, split, trim } from "./LayerOps";
+import { Command as CmdIcon, Grid3x3, Magnet, Scissors, ZoomIn, ZoomOut, MousePointerClick } from "lucide-react";
 import { createPortal } from "react-dom";
-import { Lane, LANE_H, TrackLane } from "./Tracks";
-import { PuppetFields, PuppetLibrary } from "./Puppets";
-import { LayerList } from "./Elements";
+import { Lane, LANE_H, laneRows, TrackLane } from "./Tracks";
+import { PuppetFields, puppetFromImage } from "./Puppets";
 import { Box, ElementOverlay, ElementPanel, Reg, scanRegistry, useElements } from "./Elements";
 import { arrange, CardActions, deleteItem, ListTools, renameItem, useStars } from "./Manage";
 import { Pencil } from "lucide-react";
@@ -166,7 +170,16 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       setPageErr(String(e?.message || e));
     }
   }, []);
-  const [side, setSide] = useState<"versions" | "sound" | "layers" | "langs" | "ai">("versions");
+  const [side, setSide] = useState<"props" | "sound" | "langs" | "ai" | "versions">("props");
+  const [left, setLeft] = useState<"layers" | "add" | "notes">(() => { try { return (localStorage.getItem("linnea.left") as any) || "layers"; } catch { return "layers"; } });
+  useEffect(() => { try { localStorage.setItem("linnea.left", left); } catch { /* private window */ } }, [left]);
+  const [multi, setMulti] = useState<string[]>([]);
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  const [palette, setPalette] = useState(false);
+  const [guides, setGuides] = useState<"" | "safe" | "thirds">(() => { try { return (localStorage.getItem("linnea.guides") as any) || ""; } catch { return ""; } });
+  useEffect(() => { try { localStorage.setItem("linnea.guides", guides); } catch { /* private window */ } }, [guides]);
+  const [snapOn, setSnapOn] = useState(() => { try { return localStorage.getItem("linnea.snap") !== "0"; } catch { return true; } });
+  useEffect(() => { try { localStorage.setItem("linnea.snap", snapOn ? "1" : "0"); } catch { /* private window */ } }, [snapOn]);
   // the language shown on the frame (null: the film's own texts), and the extra views
   const [viewLang, setViewLang] = useState<ViewLang>(null);
   const [board, setBoard] = useState(() => { try { return localStorage.getItem("linnea.board") === "1"; } catch { return false; } });
@@ -198,6 +211,16 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
     if (w?.VH2D) w.VH2D.set(items).then(() => draw(tRef.current));
   }, (prev) => remember({ edits: snap.current.edits, items: prev }));
   snap.current = { edits: E.edits, items: L.items, ok: E.loaded && L.loaded };
+  const kb = useRef<{ selEl: string; E: typeof E }>({ selEl: "", E });
+  kb.current = { selEl, E };
+  // one way to choose layers everywhere: the frame, the stack, the timeline
+  const select = (ids: string[], primary?: string) => {
+    setMulti(ids);
+    setSel2d(primary ?? ids[ids.length - 1] ?? "");
+    if (ids.length) setSelEl("");
+    setPathFor("");
+    if (ids.length) setSide("props");
+  };
   const travel = (from: Json[], to: Json[]) => {
     const s = from.pop();
     if (!s) return;
@@ -218,25 +241,24 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
     refreshBoxes();
   }, [viewLang, ready]);
   // element editing: boxes of the frame on screen, and once per page load the list of all elements
+  const editOn = mode === "live" && !playing && !watch;
   useEffect(() => {
-    if (side === "layers" && !playing) refreshBoxes();
-  }, [t, side, playing, ready]);
+    if (editOn) refreshBoxes();
+  }, [t, editOn, ready]);
+  useLayerKeys({ L, t, sel: sel2d, setSel: setSel2d, multi, setMulti, active: editOn && !palette && !menu && mode === "live", say });
   // The list of all elements comes from drawing the whole film once. That runs on a hidden copy of the page,
   // so the preview on screen never jumps through the film, and it is kept for the film's current code.
   const [scanning, setScanning] = useState(false);
   const scanFrame = useRef<HTMLIFrameElement>(null);
   const scanKey = `${id}@${rev}`;
   useEffect(() => {
-    if ((side !== "layers" && side !== "langs") || !ready || !info) return;
+    if ((left !== "layers" && side !== "langs" && side !== "props") || !ready || !info) return;
     const w = frame.current?.contentWindow as any;
-    if (!w?.KE) {
-      if (!L.installed) L.install().then(() => say(tx("Editing hook added to the film")));
-      return;
-    }
+    if (!w?.KE) return;
     const known = REGISTRY.get(scanKey);
     if (known) setReg(known);
     else setScanning(true);
-  }, [side, ready, rev]);
+  }, [side, left, ready, rev]);
   const onScanLoad = () => {
     const w = scanFrame.current?.contentWindow as any;
     const key = scanKey;
@@ -347,6 +369,24 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (/INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement).tagName)) return;
+      if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K" || (e.shiftKey && (e.key === "p" || e.key === "P")))) {
+        e.preventDefault();
+        setPalette((p) => !p);
+        return;
+      }
+      const ke = kb.current;
+      // a code element selected on the frame: arrows move it, Delete hides it, Esc lets go
+      if (ke.selEl && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const ed = ke.E.edits[ke.selEl] || {};
+        if (e.key.startsWith("Arrow")) {
+          e.preventDefault();
+          const d = e.shiftKey ? 10 : 1;
+          ke.E.set(ke.selEl, { dx: (ed.dx || 0) + (e.key === "ArrowLeft" ? -d : e.key === "ArrowRight" ? d : 0), dy: (ed.dy || 0) + (e.key === "ArrowUp" ? -d : e.key === "ArrowDown" ? d : 0) });
+          return;
+        }
+        if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); ke.E.set(ke.selEl, { hidden: true }); return; }
+        if (e.key === "Escape") { e.preventDefault(); setSelEl(""); return; }
+      }
       if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) {
         e.preventDefault();
         if (e.shiftKey) undoRef.current.redo(); else undoRef.current.undo();
@@ -372,11 +412,18 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       else if (e.code === "PageUp") { e.preventDefault(); const p = sc.filter((x: number) => x < tRef.current - 0.25).pop(); seek(p ?? 0); }
       else if (e.key === "?") setKeysOpen((o) => !o);
       else if (e.key === "b" || e.key === "B") setBoard((b) => !b);
-      else if (/^[1-5]$/.test(e.key)) { const k = (["versions", "sound", "layers", "langs", "ai"] as const)[+e.key - 1]; setSide(k); if (k === "layers") setPlaying(false); }
+      else if (/^[1-5]$/.test(e.key)) setSide((["props", "sound", "langs", "ai", "versions"] as const)[+e.key - 1]);
+      else if (e.key === "a" || e.key === "A") { setLeft("add"); setPlaying(false); }
+      else if (e.key === "g" || e.key === "G") setGuides((g) => (g === "" ? "safe" : g === "safe" ? "thirds" : ""));
+      else if (e.key === "k" || e.key === "K") setPlaying((p) => !p);
+      else if (e.key === "j" || e.key === "J") seek(tRef.current - 1);
+      else if (e.key === "l" || e.key === "L") seek(tRef.current + 1);
+      else if (e.key === "i" || e.key === "I") setRange((r) => [tRef.current, Math.max(tRef.current + 1 / FPS, r ? r[1] : DUR)]);
+      else if (e.key === "o" || e.key === "O") setRange((r) => [Math.min(r ? r[0] : 0, tRef.current - 1 / FPS), tRef.current]);
       else if (e.key === "n" || e.key === "N") {
         setPlaying(false);
         setMode("note");
-      } else if (e.key === "Escape") setMode("live");
+      } else if (e.key === "Escape") { setMode("live"); setRange(null); }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
@@ -416,39 +463,160 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       say(e.message);
     }
   };
+  // ---- what can be done, in one place: menus, the right-click menu, the command palette ----
+  const items2d = L.items;
+  const chosen = multi.length ? multi : sel2d ? [sel2d] : [];
+  const one = items2d.find((x) => x.id === sel2d);
+  const layerOps = (ids: string[]): MenuItem[] => {
+    const picked = items2d.filter((x) => ids.includes(x.id));
+    const n = picked.length;
+    if (!n) return [{ label: tx("Paste"), keys: "Ctrl+V", disabled: !hasClip(), run: () => { const got = pasteItems(tRef.current); if (got.length) { L.update([...items2d, ...got]); select(got.map((x) => x.id)); } } }];
+    const solo = n === 1 ? picked[0] : null;
+    return [
+      { label: tx("Duplicate"), keys: "Ctrl+D", run: () => { const r = duplicate(items2d, ids); L.update(r.items); select(r.ids); } },
+      { label: tx("Copy"), keys: "Ctrl+C", run: () => { copyItems(picked); say(tx("{0} layers copied", n)); } },
+      { label: tx("Paste"), keys: "Ctrl+V", disabled: !hasClip(), run: () => { const got = pasteItems(tRef.current); if (got.length) { L.update([...items2d, ...got]); select(got.map((x) => x.id)); } } },
+      "-",
+      { label: tx("Split at the playhead"), keys: "S", disabled: !solo || tRef.current <= solo.t0 || tRef.current >= solo.t1, run: () => { const r = split(items2d, solo!.id, tRef.current); if (r.id) { L.update(r.items); select([r.id]); } } },
+      { label: tx("Start at the playhead"), keys: "Alt+[", run: () => L.update(trim(items2d, ids, tRef.current, "start")) },
+      { label: tx("End at the playhead"), keys: "Alt+]", run: () => L.update(trim(items2d, ids, tRef.current, "end")) },
+      { label: tx("Move to the playhead"), run: () => L.update(items2d.map((x) => { if (!ids.includes(x.id)) return x; const d = tRef.current - x.t0; return { ...x, t0: rr2(x.t0 + d), t1: rr2(Math.min(DUR, x.t1 + d)), keys: x.keys?.map((k) => ({ ...k, t: rr2(k.t + d) })), pkeys: x.pkeys?.map((k: Json) => ({ ...k, t: rr2(k.t + d) })) }; })) },
+      "-",
+      { label: tx("Bring to front"), keys: "Ctrl+Shift+]", run: () => L.update(reorder(items2d, ids, "top")) },
+      { label: tx("Bring forward"), keys: "Ctrl+]", run: () => L.update(reorder(items2d, ids, "up")) },
+      { label: tx("Send backward"), keys: "Ctrl+[", run: () => L.update(reorder(items2d, ids, "down")) },
+      { label: tx("Send to back"), keys: "Ctrl+Shift+[", run: () => L.update(reorder(items2d, ids, "bottom")) },
+      "-",
+      { label: picked.every((x) => x.hidden) ? tx("Show") : tx("Hide"), keys: "H", run: () => L.update(replace(items2d, ids, (x) => ({ ...x, hidden: !picked.every((y) => y.hidden) || undefined }))) },
+      { label: picked.every((x) => x.locked) ? tx("Unlock") : tx("Lock"), keys: "Ctrl+L", run: () => L.update(replace(items2d, ids, (x) => ({ ...x, locked: !picked.every((y) => y.locked) || undefined }))) },
+      ...(solo ? [{ label: tx("Copy the look"), run: () => { copyStyle(solo); say(tx("Look copied")); } }, { label: tx("Paste the look"), run: () => L.update(replace(items2d, ids, (x) => pasteStyle(x))) }] as MenuItem[] : []),
+      "-",
+      { label: n > 1 ? tx("Delete {0} layers", n) : tx("Delete"), keys: "Del", danger: true, run: () => { L.update(remove(items2d, ids)); select([]); } },
+    ];
+  };
+  const go = (k: typeof side) => setSide(k);
+  const commands: Command[] = [
+    { id: "play", group: tx("Play"), label: tx("Play / pause"), keys: "Space", run: () => setPlaying((p) => !p) },
+    { id: "start", group: tx("Play"), label: tx("Go to the start"), keys: "Home", run: () => seek(0) },
+    { id: "end", group: tx("Play"), label: tx("Go to the end"), keys: "End", run: () => seek(DUR) },
+    { id: "loop", group: tx("Play"), label: loop ? tx("Stop looping") : tx("Loop"), run: () => setLoop(!loop) },
+    { id: "in", group: tx("Play"), label: tx("Range starts here"), keys: "I", run: () => setRange((r) => [tRef.current, Math.max(tRef.current + 1 / FPS, r ? r[1] : DUR)]) },
+    { id: "out", group: tx("Play"), label: tx("Range ends here"), keys: "O", run: () => setRange((r) => [Math.min(r ? r[0] : 0, tRef.current - 1 / FPS), tRef.current]) },
+    { id: "undo", group: lang === "tr" ? "Düzen" : "Edit", label: tx("Undo"), keys: "Ctrl+Z", run: undo, when: () => hist.current.past.length > 0 },
+    { id: "redo", group: lang === "tr" ? "Düzen" : "Edit", label: tx("Redo"), keys: "Ctrl+Y", run: redo, when: () => hist.current.future.length > 0 },
+    { id: "selall", group: lang === "tr" ? "Düzen" : "Edit", label: tx("Select every layer on screen"), keys: "Ctrl+A", run: () => select(items2d.filter((x) => tRef.current >= x.t0 && tRef.current < x.t1 && !x.locked).map((x) => x.id)) },
+    ...layerOps(chosen).filter((m): m is Exclude<MenuItem, "-"> => m !== "-" && !m.disabled).map((m, i) => ({ id: "op" + i, group: tx("Layer"), label: m.label, keys: m.keys, run: m.run, when: () => chosen.length > 0 || m.label === tx("Paste") })),
+    ...["text", "subtitle", "caption", "typing", "lower", "counter", "marker", "rect", "ellipse", "arrow", "progress", "gradient", "scrim", "image", "phone"].map((k) => ({ id: "add" + k, group: tx("Add"), label: tx("Add: {0}", ({ text: tx("Title"), subtitle: tx("Subtitle"), caption: tx("Caption box"), typing: tx("Typewriter"), lower: tx("Lower third"), counter: tx("Counter"), marker: tx("Handwriting"), rect: tx("Box"), ellipse: tx("Circle"), arrow: tx("Arrow"), progress: tx("Progress bar"), gradient: tx("Gradient background"), scrim: tx("Shade for text"), image: tx("Picture…"), phone: tx("Phone") } as Json)[k]), run: () => { setLeft("add"); setTimeout(() => (document.querySelector(`[data-add="${k}"]`) as HTMLElement | null)?.click(), 30); } })),
+    { id: "note", group: tx("Review"), label: tx("Leave a note on this frame"), keys: "N", run: () => { setPlaying(false); setMode("note"); } },
+    { id: "frame", group: tx("Review"), label: range ? tx("Range to Claude") : tx("Frame to Claude"), run: sendFrame },
+    { id: "guides", group: tx("View"), label: tx("Safe areas / thirds / none"), keys: "G", run: () => setGuides((g) => (g === "" ? "safe" : g === "safe" ? "thirds" : "")) },
+    { id: "board", group: tx("View"), label: tx("Storyboard"), keys: "B", run: () => setBoard(!board) },
+    { id: "snap", group: tx("View"), label: snapOn ? tx("Turn snapping off") : tx("Turn snapping on"), run: () => setSnapOn(!snapOn) },
+    { id: "keys", group: tx("View"), label: tx("Keyboard shortcuts"), keys: "?", run: () => setKeysOpen(true) },
+    { id: "tl", group: tx("View"), label: tx("Panel: layers"), run: () => setLeft("layers") },
+    { id: "ta", group: tx("View"), label: tx("Panel: add"), keys: "A", run: () => setLeft("add") },
+    { id: "tn", group: tx("View"), label: tx("Panel: notes"), run: () => setLeft("notes") },
+    { id: "tp", group: tx("View"), label: tx("Panel: properties"), keys: "1", run: () => go("props") },
+    { id: "ts", group: tx("View"), label: tx("Panel: sound"), keys: "2", run: () => go("sound") },
+    { id: "tg", group: tx("View"), label: tx("Panel: languages"), keys: "3", run: () => go("langs") },
+    { id: "tai", group: tx("View"), label: tx("Panel: assistant"), keys: "4", run: () => go("ai") },
+    { id: "tv", group: tx("View"), label: tx("Panel: versions"), keys: "5", run: () => go("versions") },
+    { id: "folder", group: tx("Film"), label: tx("Open the film folder"), run: () => tool("reveal", { path: info?.dir }) },
+    { id: "lip", group: tx("Film"), label: tx("Make the mouth from the film's sound"), run: lip },
+    { id: "claude", group: tx("Film"), label: tx("Introduce the film to Claude"), run: () => copy(tx("claude: open the film \"{0}\" ({1}) in Linnea: look at its state with hub_project and hub_live.", info?.title, id), tx("Copied")) },
+  ];
+  const editMenu = (): MenuItem[] => [
+    { label: tx("Undo"), keys: "Ctrl+Z", disabled: !hist.current.past.length, run: undo },
+    { label: tx("Redo"), keys: "Ctrl+Y", disabled: !hist.current.future.length, run: redo },
+    "-",
+    { label: tx("Select every layer on screen"), keys: "Ctrl+A", run: () => select(items2d.filter((x) => tRef.current >= x.t0 && tRef.current < x.t1 && !x.locked).map((x) => x.id)) },
+    { label: tx("Deselect"), keys: "Esc", disabled: !chosen.length && !selEl, run: () => { select([]); setSelEl(""); } },
+    "-",
+    ...layerOps(chosen),
+  ];
+  const viewMenu = (): MenuItem[] => [
+    { label: (guides === "safe" ? "✓ " : "") + tx("Safe areas"), keys: "G", run: () => setGuides(guides === "safe" ? "" : "safe") },
+    { label: (guides === "thirds" ? "✓ " : "") + tx("Rule of thirds"), run: () => setGuides(guides === "thirds" ? "" : "thirds") },
+    { label: (snapOn ? "✓ " : "") + tx("Snapping"), run: () => setSnapOn(!snapOn) },
+    { label: (board ? "✓ " : "") + tx("Storyboard"), keys: "B", run: () => setBoard(!board) },
+    { label: (loop ? "✓ " : "") + tx("Loop"), run: () => setLoop(!loop) },
+    "-",
+    { label: tx("All commands…"), keys: "Ctrl+K", run: () => setPalette(true) },
+    { label: tx("Keyboard shortcuts"), keys: "?", run: () => setKeysOpen(true) },
+  ];
+
+  // ---- the timeline: the film's code elements, one lane per layer (top first), sounds ----
+  const laneOf = (it: Json): Lane => {
+    const marks = [
+      ...keyTimes(it).map((k) => ({ t: k, kind: "key" as const })),
+      ...(it.kind === "puppet" ? (it.states || []).map((s: Json) => ({ t: rr2(it.t0 + s.t0), kind: "state" as const, label: s.state })) : []),
+    ];
+    return {
+      key: `l:${it.id}`, group: "layers", groupLabel: tx("Layers"), label: layerName(it), color: it.kind === "puppet" ? "#b79cf2" : it.kind === "image" ? "#d9a66f" : "#86b991", ownKeys: false,
+      sel: sel2d ? `l:${sel2d}` : "", selSet: chosen.map((x) => `l:${x}`),
+      items: [{ id: `l:${it.id}`, s: it.t0, e: it.t1, label: (it.hidden ? tx("(hidden) ") : "") + layerName(it), locked: !!it.locked, dim: !!it.hidden, marks }],
+      onSelect: (lid, e) => {
+        const x = lid.slice(2);
+        if (e && (e.shiftKey || e.ctrlKey || e.metaKey)) select(chosen.includes(x) ? chosen.filter((y) => y !== x) : [...chosen, x], x);
+        else if (!chosen.includes(x) || chosen.length < 2) select([x], x);
+        else setSel2d(x);
+      },
+      onChange: (lid, s, e) => {
+        const x = lid.slice(2);
+        const it0 = L.items.find((q) => q.id === x);
+        if (!it0) return;
+        // moving a bar takes its keys along; trimming keeps them where they are
+        const d = Math.abs(it0.t1 - it0.t0 - (e - s)) < 1e-3 ? s - it0.t0 : 0;
+        L.update(L.items.map((q) => (q.id === x ? { ...q, t0: s, t1: e, keys: d ? q.keys?.map((k) => ({ ...k, t: rr2(k.t + d) })) : q.keys, pkeys: d ? q.pkeys?.map((k: Json) => ({ ...k, t: rr2(k.t + d) })) : q.pkeys } : q)));
+      },
+      onDelete: (lid) => { L.update(remove(L.items, [lid.slice(2)])); select([]); },
+      onMark: (lid, from, to) => {
+        const x = lid.slice(2);
+        L.update(L.items.map((q) => {
+          if (q.id !== x) return q;
+          const si = (q.states || []).findIndex((s: Json) => Math.abs(q.t0 + s.t0 - from) < 0.011);
+          if (q.kind === "puppet" && si >= 0 && !keyTimes(q).some((k) => Math.abs(k - from) < 0.011)) return { ...q, states: q.states.map((s: Json, i: number) => (i === si ? { ...s, t0: rr2(Math.max(0, to - q.t0)) } : s)) };
+          return moveKeyTime(q, from, to);
+        }));
+      },
+      onSeek: (x) => { setPlaying(false); seek(x); },
+      onMenu: (lid, x, y) => setMenu({ x, y, id: lid.slice(2) }),
+    } as Lane;
+  };
   const lanes: Lane[] = [
     {
-      key: "elements", label: tx("Code elements"), color: "#7fb0ff", sel: selEl ? `e:${selEl}` : "",
-      items: reg.map((r) => ({ id: `e:${r.id}`, s: E.edits[r.id]?.t0 ?? r.t0, e: E.edits[r.id]?.t1 ?? r.t1, label: (E.edits[r.id]?.hidden ? "(gizli) " : "") + (E.edits[r.id]?.text ?? r.label) })),
-      onSelect: (eid) => { setSelEl(eid.slice(2)); setSide("layers"); },
+      key: "elements", group: "elements", groupLabel: tx("From the film's code"), label: tx("Code elements"), color: "#7fb0ff", sel: selEl ? `e:${selEl}` : "", stack: true, ownKeys: false,
+      items: reg.map((r) => ({ id: `e:${r.id}`, s: E.edits[r.id]?.t0 ?? r.t0, e: E.edits[r.id]?.t1 ?? r.t1, label: (E.edits[r.id]?.hidden ? tx("(hidden) ") : "") + (E.edits[r.id]?.text ?? r.label), dim: !!E.edits[r.id]?.hidden })),
+      onSelect: (eid) => { setSelEl(eid.slice(2)); setSel2d(""); setMulti([]); setSide("props"); },
       onChange: (eid, s, e) => E.set(eid.slice(2), { t0: s, t1: e }),
       onDelete: (eid) => E.set(eid.slice(2), { hidden: true }),
-    },
+    } as Lane,
+    ...[...L.items].reverse().map(laneOf),
     {
-      key: "layers", label: tx("Layers"), color: "#86b991", sel: selTrack,
-      items: L.items.map((it) => ({ id: `l:${it.id}`, s: it.t0, e: it.t1, label: (it.hidden ? "(gizli) " : "") + (it.label || it.text || it.title || it.puppet || it.kind) })),
-      onSelect: (lid) => { setSelTrack(lid); setSel2d(lid.slice(2)); setSide("layers"); },
-      onChange: (lid, s, e) => L.update(L.items.map((it) => (`l:${it.id}` === lid ? { ...it, t0: s, t1: e } : it))),
-      onDelete: (lid) => { L.update(L.items.filter((it) => `l:${it.id}` !== lid)); setSelTrack(""); },
-    },
-    {
-      key: "sound", label: tx("Sound clips"), color: "#7fa7d9", sel: selTrack,
+      key: "sound", group: "sound", groupLabel: tx("Sound clips"), label: tx("Sound clips"), color: "#7fa7d9", sel: selTrack, stack: true,
       // each sound at its real length; a muted one says so, and selecting one opens it in the Sound tab
       items: clips.map((c, i) => ({ id: `c:${c.id || i}`, s: c.at, e: c.at + Math.max(0.3, c.dur || 1), label: (c.mute ? tx("(muted) ") : "") + (c.name || c.file) })),
       onSelect: (cid) => { setSelTrack(cid); setSide("sound"); },
       onChange: (cid, s) => saveClips(clips.map((c, i) => (`c:${c.id || i}` === cid ? { ...c, at: Math.round(s * 100) / 100 } : c))),
       onDelete: (cid) => { saveClips(clips.filter((c, i) => `c:${c.id || i}` !== cid)); setSelTrack(""); },
-    },
-  ];
+    } as Lane,
+  ].filter((ln) => ln.key !== "elements" || reg.length > 0);
+  const puppetInfo = (name: string) => win()?.KE_PUPPET?.(name) || null;
 
   if (err) return <div className="page"><button className="btn ghost" onClick={back}><ArrowLeft />{tx("Films")}</button><p className="err" style={{ marginTop: 16 }}>{err}</p></div>;
   if (!info) return <div className="page"><span className="muted">{tx("Loading")}</span></div>;
+  const askEditable = () => navigator.clipboard.writeText(tx("Make the film \"{0}\" ({1}) in Linnea editable: draw every text and element on screen (title frames, caption boxes, characters, objects) with KE.text / KE.group so I can move and resize each as one piece in the app. Keep the current tweaks.json edits. Then hub_live.", info.title, id)).then(() => say(tx("Message for Claude copied")));
   return (
-    <div className="ed" style={{ gridTemplateColumns: "320px minmax(0, 1fr) 320px" }}>
+    <div className="ed film-ed" style={{ gridTemplateColumns: "288px minmax(0, 1fr) 320px" }}>
       <div className="ed-top">
         <button className="btn icon ghost" onClick={back} title={tx("Films")}><ArrowLeft /></button>
         <span className="title">{info.title}</span>
         <span className="muted num" style={{ fontSize: 12 }}>{W}×{H} · {FPS} {tx("fps ·")} {dur(DUR)}</span>
+        <span className="top-menus">
+          <MenuButton label={lang === "tr" ? "Düzen" : "Edit"} items={editMenu} />
+          <MenuButton label={tx("View")} items={viewMenu} />
+          <button className="btn sm ghost cmdk" onClick={() => setPalette(true)} title={tx("All commands (Ctrl+K)")}><CmdIcon />{tx("Commands")}<span className="kbd">Ctrl K</span></button>
+        </span>
         <span className="grow" />
         {busy && (
           <div className="rowx" style={{ width: 260 }}>
@@ -457,7 +625,9 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
             <button className="btn icon sm ghost" title={tx("Stop")} onClick={() => act.jobs.filter((j) => j.project === id && j.status === "running").forEach((j) => tool("hub_job", { id: j.id, cancel: true }))}><Square /></button>
           </div>
         )}
-        <button className="btn ghost" title={tx("Film folder")} onClick={() => tool("reveal", { path: info.dir })}><FolderOpen /></button>
+        <button className="btn icon sm ghost" title={tx("Undo (Ctrl+Z)")} disabled={!hist.current.past.length} onClick={undo}><Undo2 /></button>
+        <button className="btn icon sm ghost" title={tx("Redo (Ctrl+Y)")} disabled={!hist.current.future.length} onClick={redo}><Redo2 /></button>
+        <button className="btn ghost icon" title={tx("Film folder")} onClick={() => tool("reveal", { path: info.dir })}><FolderOpen /></button>
         {toCheck.length > 0 && <button className={`btn ${mode === "check" ? "primary" : ""}`} onClick={() => { setMode(mode === "check" ? "live" : "check"); setPlaying(false); }}>{tx("Check the fixes")} {toCheck.length}</button>}
         {openNotes.length > 0 && (
           <button className="btn" disabled={!!busy} title={tx("Let the film assistant fix all open notes")} onClick={async () => {
@@ -472,10 +642,25 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
         <RenderMenu disabled={!!busy} latest={latest} fixed={toCheck.length + notes.filter((n) => n.status === "done" && !n.version).length} run={run} lang={viewLang?.code || ""} />
       </div>
 
-      <div className="ed-left">
-        <div className="tabs"><button className="on">{tx("Notes")} {openNotes.length ? openNotes.length : ""}</button></div>
+      <div className="ed-left" style={{ padding: 0, gap: 0 }}>
+        <div className="tabs">
+          <button className={left === "layers" ? "on" : ""} onClick={() => setLeft("layers")}>{tx("Layers")}{L.items.length ? <span className="tab-n">{L.items.length}</span> : null}</button>
+          <button className={left === "add" ? "on" : ""} onClick={() => { setLeft("add"); setPlaying(false); }}><Plus size={14} style={{ marginRight: 2, verticalAlign: -2 }} />{tx("Add")}</button>
+          <button className={left === "notes" ? "on" : ""} onClick={() => setLeft("notes")}>{tx("Notes")}{openNotes.length ? <span className="tab-n">{openNotes.length}</span> : null}</button>
+        </div>
         <div className="tab-body">
-          <NotesList notes={notes} fps={FPS} seek={(n: Json) => { seek(n.t); if (n.t1) setRange([n.t, n.t1]); }} update={async (n: Json, p: Json) => { await tool("hub_note_update", { film: id, id: n.id, ...p }); load(); }} />
+          {left !== "notes" && !L.installed && (
+            <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+              <p className="sec" style={{ fontSize: 12, marginBottom: 8, lineHeight: "18px" }}>{tx("Editing is not switched on for this film yet. It adds one script line to the page; the film's code stays as it is.")}</p>
+              <button className="btn sm primary" onClick={() => L.install().then(() => say(tx("Editing hook added to the film")))}>{tx("Switch on editing")}</button>
+            </div>
+          )}
+          {left === "layers" && <LayerStack L={L} t={t} sel={sel2d} multi={chosen} select={select} seek={(x) => { setPlaying(false); seek(x); }} reg={reg} E={E} selEl={selEl} scanning={scanning}
+            pickEl={(x, t0, t1) => { setSelEl(x); setSel2d(""); setMulti([]); setSide("props"); if (tRef.current < t0 || tRef.current >= t1) { setPlaying(false); seek(t0 + 0.05); } }}
+            onMenu={(x, y, lid) => setMenu({ x, y, id: lid })} onAdd={() => setLeft("add")} askClaude={askEditable} />}
+          {left === "add" && <AddPanel L={L} t={t} W={W} H={H} dur={DUR} say={say} select={(ids) => { select(ids); }}
+            puppets={(dropRef: any) => <PuppetGrid film={id} L={L} t={t} W={W} H={H} dur={DUR} say={say} select={(ids) => select(ids)} dropRef={dropRef} makeFromImage={puppetFromImage} />} />}
+          {left === "notes" && <NotesList notes={notes} fps={FPS} seek={(n: Json) => { seek(n.t); if (n.t1) setRange([n.t, n.t1]); }} update={async (n: Json, p: Json) => { await tool("hub_note_update", { film: id, id: n.id, ...p }); load(); }} />}
         </div>
       </div>
 
@@ -486,9 +671,10 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
           ) : (
             <>
               <iframe ref={frame} key={rev} src={`${info.url}?r=${rev}`} onLoad={onLoad} style={{ width: W, height: H, border: 0, display: "block", background: "#000", pointerEvents: "none" }} title="film" />
+              {guides && <FrameGuides W={W} H={H} kind={guides} />}
               {mode === "note" && <NoteLayer W={W} H={H} t={t} range={range} fps={FPS} cancel={() => setMode("live")} save={async (p: Json) => { setBusy({ label: tx("Saving the note"), p: 0.5 }); try { await tool("hub_note_add", { film: id, ...p }); setMode("live"); setRange(null); load(); } catch (e: any) { say(e.message); } setBusy(null); }} />}
-              {mode === "live" && side === "layers" && !playing && <ElementOverlay boxes={boxes} E={E} sel={selEl} setSel={(x) => { setSelEl(x); if (x) setSel2d(""); }} t={t} W={W} H={H} L={L} />}
-              {mode === "live" && side === "layers" && !playing && <LayerOverlay L={L} t={t} sel={sel2d} setSel={(x) => { setSel2d(x); if (x) setSelEl(""); }} W={W} H={H} passThrough pathFor={pathFor} />}
+              {editOn && <ElementOverlay boxes={boxes} E={E} sel={selEl} setSel={(x) => { setSelEl(x); if (x) { setSel2d(""); setMulti([]); setSide("props"); } else select([]); }} t={t} W={W} H={H} L={L} />}
+              {editOn && <LayerOverlay L={L} t={t} sel={sel2d} setSel={(x) => { setSel2d(x); if (x) { setSelEl(""); setSide("props"); } }} multi={chosen} setMulti={setMulti} W={W} H={H} passThrough pathFor={pathFor} snap={snapOn} others={boxes} onMenu={(x, y, lid) => setMenu({ x, y, id: lid })} />}
               {mode === "check" && <CheckLayer notes={toCheck} seek={seek} update={async (n: Json, p: Json) => { await tool("hub_note_update", { film: id, id: n.id, ...p }); load(); }} done={() => setMode("live")} />}
             </>
           )}
@@ -498,9 +684,11 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
         {!ready && !watch && <div className="muted" style={{ fontSize: 12 }}>{pageErr ? <span className="err">{pageErr}</span> : tx("Loading the page")}</div>}
         {ready && pageErr && <div className="err" style={{ fontSize: 12 }}>{pageErr}</div>}
         <div className="transport">
-          <button className="btn icon sm ghost" onClick={() => seek(t - 1 / FPS)} title={tx("Previous frame")}><ChevronLeft /></button>
-          <button className="btn icon" onClick={() => setPlaying(!playing)} disabled={mode !== "live"} title={tx("Play / pause")}>{playing ? <Pause /> : <Play />}</button>
-          <button className="btn icon sm ghost" onClick={() => seek(t + 1 / FPS)} title={tx("Next frame")}><ChevronRight /></button>
+          <button className="btn icon sm ghost" onClick={() => seek(0)} title={tx("Start (Home)")}><SkipBack /></button>
+          <button className="btn icon sm ghost" onClick={() => seek(t - 1 / FPS)} title={tx("Previous frame (,)")}><ChevronLeft /></button>
+          <button className="btn icon" onClick={() => setPlaying(!playing)} disabled={mode !== "live"} title={tx("Play / pause (Space, K)")}>{playing ? <Pause /> : <Play />}</button>
+          <button className="btn icon sm ghost" onClick={() => seek(t + 1 / FPS)} title={tx("Next frame (.)")}><ChevronRight /></button>
+          <button className="btn icon sm ghost" onClick={() => seek(DUR)} title={tx("End (End)")}><SkipForward /></button>
           <span className="tc"><b>{tc(t, FPS)}</b> <span>/ {tc(DUR, FPS)}</span></span>
           <span className="muted num" style={{ fontSize: 12 }}>{tx("frame")} {Math.round(t * FPS)}</span>
           <button className={`btn icon sm ${loop ? "" : "ghost"}`} onClick={() => setLoop(!loop)} title={tx("Loop")}><Repeat /></button>
@@ -510,6 +698,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
           {range && <button className="btn icon sm ghost" title={tx("Clear range")} onClick={() => setRange(null)}><X /></button>}
           <span className="grow" />
           {viewLang && <button className="btn sm ghost" title={tx("Back to the original texts")} onClick={() => setViewLang(null)} style={{ color: "var(--accent)" }}>{viewLang.code} <X /></button>}
+          <button className={`btn icon sm ${guides ? "" : "ghost"}`} onClick={() => setGuides(guides === "" ? "safe" : guides === "safe" ? "thirds" : "")} title={tx("Safe areas / thirds (G)")} style={guides ? { color: "var(--accent)" } : undefined}><Grid3x3 /></button>
           <button className={`btn icon sm ${board ? "" : "ghost"}`} onClick={() => setBoard(!board)} title={tx("Storyboard (B)")}><LayoutGrid /></button>
           <button className="btn icon sm ghost" onClick={() => setKeysOpen(true)} title={tx("Keyboard shortcuts (?)")}><Keyboard /></button>
         </div>
@@ -520,46 +709,36 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
 
       <div className="ed-right" style={{ padding: 0, gap: 0 }}>
         <div className="tabs">
-          {([["versions", tx("Versions")], ["sound", tx("Sound")], ["layers", tx("Layers")], ["langs", tx("Languages")], ["ai", tx("Assistant")]] as const).map(([k, l]) => (
-            <button key={k} className={side === k ? "on" : ""} onClick={() => { setSide(k); if (k === "layers") setPlaying(false); }}>{l}{k === "layers" && L.items.length ? ` ${L.items.length}` : ""}</button>
+          {([["props", tx("Properties")], ["sound", tx("Sound")], ["langs", tx("Languages")], ["ai", tx("Assistant")], ["versions", tx("Versions")]] as const).map(([k, l]) => (
+            <button key={k} className={side === k ? "on" : ""} onClick={() => setSide(k)}>{l}</button>
           ))}
-          <span style={{ flex: 1 }} />
-          <button className="btn icon sm ghost" title={tx("Undo (Ctrl+Z)")} disabled={!hist.current.past.length} onClick={undo}><Undo2 /></button>
-          <button className="btn icon sm ghost" title={tx("Redo (Ctrl+Y)")} disabled={!hist.current.future.length} onClick={redo}><Redo2 /></button>
         </div>
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 24, overflow: "auto", flex: 1 }}>
         {side === "langs" && <LangsPanel film={id} reg={reg} scanning={scanning} t={t} seek={(x) => { setPlaying(false); seek(x); }} say={say} view={viewLang} setView={setViewLang} run={run} copy={copy} />}
         {side === "ai" && <FilmAssistant id={id} dir={info.dir} t={t} fps={FPS} sel={selEl} run={run} busy={!!busy} say={say} />}
         {side === "sound" && <SoundPanel film={id} t={t} range={range} say={say} rev={audioV} sel={selTrack.startsWith("c:") ? selTrack.slice(2) : ""} seek={(x) => { setPlaying(false); seek(x); }} onApplied={() => { setAudioV(Date.now()); load(); }} />}
-        {side === "layers" && selEl && <ElementPanel id={selEl} box={boxes.find((b) => b.id === selEl)} reg={reg.find((r) => r.id === selEl)} E={E} t={t} close={() => setSelEl("")} />}
-        {side === "layers" && selEl && (() => {
+        {side === "props" && chosen.length > 1 && <MultiInspector L={L} ids={chosen} t={t} W={W} H={H} dur={DUR} select={(ids) => select(ids)} />}
+        {side === "props" && chosen.length <= 1 && one && <LayerInspector L={L} id={one.id} t={t} W={W} H={H} dur={DUR} seek={(x) => { setPlaying(false); seek(x); }} pathFor={pathFor} setPathFor={setPathFor} puppetInfo={puppetInfo} onLipsync={lip} say={say} select={(ids) => select(ids)} />}
+        {side === "props" && !one && selEl && <ElementPanel id={selEl} box={boxes.find((b) => b.id === selEl)} reg={reg.find((r) => r.id === selEl)} E={E} t={t} close={() => setSelEl("")} />}
+        {side === "props" && !one && selEl && (() => {
           const b = boxes.find((x) => x.id === selEl);
           if (b?.kind === "puppet") return <PuppetFields info={win()?.KE_PUPPET?.(b.puppet) || null} params={E.edits[selEl]?.params ?? b.params ?? {}} states={E.edits[selEl]?.states ?? b.states ?? []} localT={b.pt ?? 0} onParams={(params) => E.set(selEl, { params })} onStates={(states) => E.set(selEl, { states })} onLipsync={lip} />;
           return <button className="btn sm" onClick={() => navigator.clipboard.writeText(tx("In the film \"{0}\" in Linnea, turn the element \"{1}\" (id {2}) into a puppet: save its drawing code to the library with puppet_save (things that may change, like colour or text, become params; if it animates, make it a rich puppet with states), draw it in the film with KE.puppet, keep the current edits, then hub_live.", id, b?.label || selEl, selEl)).then(() => say(tx("Message for Claude copied")))}>{tx("Have Claude make it a puppet")}</button>;
         })()}
-        {side === "layers" && sel2d && (() => {
-          const it = L.items.find((x: Json) => x.id === sel2d);
-          if (it?.kind !== "puppet") return null;
-          const put = (p: Json) => L.update(L.items.map((x: Json) => (x.id === sel2d ? { ...x, ...p } : x)));
-          return (<div className="stack" style={{ gap: 6 }}><h2>{it.label || it.puppet}</h2><PuppetFields info={win()?.KE_PUPPET?.(it.puppet) || null} params={it.params || {}} states={it.states || []} localT={t - it.t0} onParams={(params) => put({ params })} onStates={(states) => put({ states })} onLipsync={lip} /></div>);
-        })()}
-        {side === "layers" && !selEl && !sel2d && <LayerList reg={reg} E={E} L={L} t={t} sel={selEl || sel2d} pick={(k, x, t0) => {
-          if (k === "e") { setSelEl(x); setSel2d(""); } else { setSel2d(x); setSelEl(""); }
-          const it = k === "l" ? L.items.find((i) => i.id === x) : null;
-          const r = k === "e" ? reg.find((i) => i.id === x) : null;
-          const t1 = it ? it.t1 : (E.edits[x]?.t1 ?? r?.t1 ?? DUR);
-          if (tRef.current < t0 || tRef.current >= t1) seek(t0 + 0.05);
-        }} />}
-        {side === "layers" && !selEl && !sel2d && <PuppetLibrary film={id} L={L} t={t} W={W} H={H} dur={DUR} say={say} />}
-        {side === "layers" && !selEl && (
-          <div className="stack" style={{ gap: 6 }}>
-            <h2>{tx("Code elements")}</h2>
-            <p className="sec" style={{ fontSize: 12, lineHeight: "18px" }}>{tx("Text and elements the film draws itself show as blue boxes: click, drag, resize from the corner, double-click text to change it. The code stays as it is; edits go to tweaks.json and into renders.")}</p>
-            {!reg.length && <span className="muted" style={{ fontSize: 12 }}>{tx("Scanning elements…")}</span>}
-            <button className="btn sm" onClick={() => navigator.clipboard.writeText(tx("Make the film \"{0}\" ({1}) in Linnea editable: draw every text and element on screen (title frames, caption boxes, characters, objects) with KE.text / KE.group so I can move and resize each as one piece in the app. Keep the current tweaks.json edits. Then hub_live.", info.title, id)).then(() => say(tx("Message for Claude copied")))}>{tx("Have Claude make everything editable")}</button>
+        {side === "props" && !one && !selEl && (
+          <div className="stack empty-props">
+            <MousePointerClick size={28} style={{ color: "var(--text-3)" }} />
+            <p style={{ margin: 0 }}>{tx("Select something on the frame, in Layers or on the timeline to change it here.")}</p>
+            <div className="kv tips">
+              <span className="kbd">A</span><span>{tx("Add a title, shape, picture or puppet")}</span>
+              <span className="kbd">Shift</span><span>{tx("Click to select several")}</span>
+              <span className="kbd">S</span><span>{tx("Split the selected layer at the playhead")}</span>
+              <span className="kbd">Ctrl K</span><span>{tx("Every command, by name")}</span>
+              <span className="kbd">G</span><span>{tx("Safe areas and thirds")}</span>
+            </div>
+            <button className="btn sm" onClick={askEditable}>{tx("Have Claude make everything editable")}</button>
           </div>
         )}
-        {side === "layers" && <LayersPanel L={L} t={t} W={W} H={H} dur={DUR} sel={sel2d} setSel={(x) => { setSel2d(x); if (x !== pathFor) setPathFor(""); }} pathFor={pathFor} setPathFor={setPathFor} />}
         {side === "versions" && <>
         <Versions versions={versions} watch={watch} setWatch={setWatch} />
         <Cleanup film={id} say={say} />
@@ -578,9 +757,44 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       </div>
 
       <div className="dock">
-        <FilmTimeline dur={DUR} fps={FPS} t={t} seek={(x: number) => { setPlaying(false); seek(x); }} scenes={scenes.length ? scenes : info.scenes || []} notes={notes} range={range} setRange={setRange} changed={latest?.changedRanges || []} chunkSec={info.chunk_frames / FPS} lanes={lanes} />
+        <FilmTimeline dur={DUR} fps={FPS} t={t} seek={(x: number) => { setPlaying(false); seek(x); }} scenes={scenes.length ? scenes : info.scenes || []} notes={notes} range={range} setRange={setRange} changed={latest?.changedRanges || []} chunkSec={info.chunk_frames / FPS} lanes={lanes}
+          playing={playing} snapOn={snapOn} setSnapOn={setSnapOn}
+          tools={<>
+            <button className="btn sm ghost" title={tx("Split the selected layer at the playhead (S)")} disabled={!one || t <= one.t0 || t >= one.t1} onClick={() => { const r = split(L.items, one!.id, t); if (r.id) { L.update(r.items); select([r.id]); } }}><Scissors />{tx("Split")}</button>
+            <button className="btn sm ghost" title="Alt+[" disabled={!chosen.length} onClick={() => L.update(trim(L.items, chosen, t, "start"))}>{tx("Start here")}</button>
+            <button className="btn sm ghost" title="Alt+]" disabled={!chosen.length} onClick={() => L.update(trim(L.items, chosen, t, "end"))}>{tx("End here")}</button>
+            <button className="btn sm ghost" title={tx("Range starts here (I)")} onClick={() => setRange((r) => [t, Math.max(t + 1 / FPS, r ? r[1] : DUR)])}>I</button>
+            <button className="btn sm ghost" title={tx("Range ends here (O)")} onClick={() => setRange((r) => [Math.min(r ? r[0] : 0, t - 1 / FPS), t])}>O</button>
+          </>} />
       </div>
+      {menu && <Menu x={menu.x} y={menu.y} items={layerOps(chosen.includes(menu.id) ? chosen : [menu.id])} close={() => setMenu(null)} />}
+      {palette && <Palette commands={commands} close={() => setPalette(false)} />}
     </div>
+  );
+}
+
+/** Safe areas (action 93 %, title 90 %, and the 9:16 social UI band) or the rule of thirds, over the frame. */
+function FrameGuides({ W, H, kind }: { W: number; H: number; kind: "safe" | "thirds" }) {
+  const lw = Math.max(1, W / 900);
+  const st = { stroke: "rgba(255,255,255,.55)", strokeWidth: lw, fill: "none" } as const;
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+      {kind === "thirds" ? (
+        <>
+          {[1, 2].map((i) => <line key={"v" + i} x1={(W * i) / 3} x2={(W * i) / 3} y1={0} y2={H} {...st} />)}
+          {[1, 2].map((i) => <line key={"h" + i} y1={(H * i) / 3} y2={(H * i) / 3} x1={0} x2={W} {...st} />)}
+        </>
+      ) : (
+        <>
+          <rect x={W * 0.035} y={H * 0.035} width={W * 0.93} height={H * 0.93} {...st} strokeDasharray={`${lw * 8} ${lw * 6}`} />
+          <rect x={W * 0.05} y={H * 0.05} width={W * 0.9} height={H * 0.9} {...st} />
+          {H > W && <rect x={0} y={H * 0.8} width={W} height={H * 0.2} fill="rgba(255,80,120,.10)" stroke="none" />}
+          {H > W && <rect x={W * 0.86} y={H * 0.45} width={W * 0.14} height={H * 0.35} fill="rgba(255,80,120,.10)" stroke="none" />}
+          <line x1={W / 2 - lw * 12} x2={W / 2 + lw * 12} y1={H / 2} y2={H / 2} {...st} />
+          <line y1={H / 2 - lw * 12} y2={H / 2 + lw * 12} x1={W / 2} x2={W / 2} {...st} />
+        </>
+      )}
+    </svg>
   );
 }
 
@@ -970,22 +1184,66 @@ function VersionPlayer({ v, onTime, close, note }: Json) {
   );
 }
 
-function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, changed, chunkSec, lanes }: Json) {
+const HEAD = 148;
+/** The film's timeline: ruler, render chunks, scenes, notes and one lane per layer, grouped and foldable.
+ *  Ctrl + wheel zooms around the pointer, Shift + wheel (or a trackpad swipe) scrolls; bars snap. */
+function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, changed, chunkSec, lanes, playing, snapOn, setSnapOn, tools }: Json) {
   const box = useRef<HTMLDivElement>(null);
+  const wrap = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(800);
+  const [zoom, setZoom] = useState(1);
+  const [off, setOff] = useState(0);
+  const [snapLine, setSnapLine] = useState<number | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  // the timeline's height: drag its top edge
+  const [tlH, setTlH] = useState(() => { try { return +(localStorage.getItem("linnea.tlh") || 0) || 260; } catch { return 260; } });
+  useEffect(() => { try { localStorage.setItem("linnea.tlh", String(Math.round(tlH))); } catch { /* private window */ } }, [tlH]);
+  const resize = (e: React.PointerEvent) => {
+    const y0 = e.clientY, h0 = tlH;
+    const mv = (ev: PointerEvent) => setTlH(Math.max(120, Math.min(window.innerHeight * 0.7, h0 - (ev.clientY - y0))));
+    const up = () => { window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); document.body.style.cursor = ""; };
+    document.body.style.cursor = "ns-resize";
+    window.addEventListener("pointermove", mv);
+    window.addEventListener("pointerup", up);
+  };
+  const [shut, setShut] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem("linnea.tlshut") || "{}"); } catch { return {}; } });
+  useEffect(() => { try { localStorage.setItem("linnea.tlshut", JSON.stringify(shut)); } catch { /* private window */ } }, [shut]);
   useEffect(() => {
     const ro = new ResizeObserver((e) => setW(e[0].contentRect.width));
     if (box.current) ro.observe(box.current);
     return () => ro.disconnect();
   }, []);
-  const pad = 16;
-  const sx = (w - pad * 2) / Math.max(D, 0.1);
-  const X = (x: number) => pad + x * sx;
+  const padR = 16;
+  const span = Math.max(1, w - HEAD - padR);
+  const sx = (span / Math.max(D, 0.1)) * zoom;
+  const vis = span / sx;
+  const offC = Math.max(0, Math.min(Math.max(0, D - vis), off));
+  const X = (x: number) => HEAD + (x - offC) * sx;
   const at = (e: { clientX: number }) => {
     const r = box.current!.getBoundingClientRect();
-    return Math.max(0, Math.min(D, (e.clientX - r.left - pad) / sx));
+    return Math.max(0, Math.min(D, (e.clientX - r.left - HEAD) / sx + offC));
   };
+  // keep the playhead in view while playing
+  useEffect(() => { if (playing && (t > offC + vis * 0.95 || t < offC)) setOff(Math.max(0, t - vis * 0.1)); }, [t, playing]);
+  const zoomAt = (z: number, anchor: number) => {
+    const nz = Math.max(1, Math.min(200, z));
+    const nsx = (span / Math.max(D, 0.1)) * nz;
+    setZoom(nz);
+    setOff(anchor - (X(anchor) - HEAD) / nsx);
+  };
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const wheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomAt(zoom * Math.exp(-e.deltaY * 0.0025), at(e)); }
+      else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) { if (zoom > 1) { e.preventDefault(); setOff((o) => Math.max(0, Math.min(D - vis, o + ((e.deltaX || e.deltaY) / sx)))); } }
+    };
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => el.removeEventListener("wheel", wheel);
+  });
   const down = (e: React.MouseEvent) => {
+    const r = box.current!.getBoundingClientRect();
+    if (e.clientX - r.left < HEAD) return;
     const x0 = at(e);
     if (e.shiftKey) setRange([x0, x0]);
     else {
@@ -1000,28 +1258,72 @@ function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, ch
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
   };
-  const steps = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
+  const steps = [1 / fps, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
   const step = steps.find((s) => s * sx >= 64) || 300;
-  const ticks = useMemo(() => Array.from({ length: Math.floor(D / step) + 1 }, (_, i) => i * step), [D, step]);
+  const ticks = useMemo(() => { const a = Math.floor(offC / step); return Array.from({ length: Math.ceil(vis / step) + 2 }, (_, i) => (a + i) * step).filter((x) => x <= D + 1e-6); }, [offC, vis, step, D]);
+  const label = (x: number) => (step < 1 ? `${Math.floor(x / 60)}:${(x % 60).toFixed(step < 0.1 ? 2 : 1).padStart(step < 0.1 ? 5 : 4, "0")}` : `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, "0")}`);
+  // the lanes, in groups that fold
+  const TOP = 98, GH = 20;
+  let y = TOP;
+  const rows: { kind: "group" | "lane"; key: string; label: string; y: number; h: number; lane?: Lane; n?: number; color?: string }[] = [];
+  const groups: string[] = [];
+  for (const ln of lanes as Lane[]) { const g = (ln as Json).group || ln.key; if (!groups.includes(g)) groups.push(g); }
+  for (const g of groups) {
+    const ls = (lanes as Lane[]).filter((ln) => ((ln as Json).group || ln.key) === g);
+    const n = ls.reduce((a, ln) => a + ln.items.length, 0);
+    rows.push({ kind: "group", key: g, label: (ls[0] as Json).groupLabel || ls[0].label, y, h: GH, n, color: ls[0].color });
+    y += GH;
+    if (shut[g]) continue;
+    for (const ln of ls) { const h = laneRows(ln) * LANE_H; rows.push({ kind: "lane", key: ln.key, label: ln.label, y, h, lane: ln }); y += h; }
+  }
+  const height = y + 6;
+  const snaps = useMemo(() => !snapOn ? undefined : [0, D, t, ...scenes.flatMap((s: Json) => [s.t0, s.t1]), ...(range || []), ...(lanes as Lane[]).flatMap((ln) => ln.items.flatMap((i) => [i.s, i.e]))], [snapOn, D, t, scenes, range, lanes]);
   return (
-    <div className="tl" ref={box} onMouseDown={down} style={{ height: 100 + (lanes?.length || 0) * LANE_H + 4 }}>
-      {(lanes || []).map((ln: Lane, k: number) => <TrackLane key={ln.key} lane={ln} top={100 + k * LANE_H} sx={sx} pad={pad} total={D} />)}
-      {ticks.map((x) => (
-        <span key={x} className="num" style={{ position: "absolute", left: X(x), top: 0, fontSize: 10, color: "var(--text-3)", borderLeft: "1px solid var(--line-2)", paddingLeft: 4, height: 14, lineHeight: "12px" }}>{Math.floor(x / 60)}:{String(Math.floor(x % 60)).padStart(2, "0")}</span>
-      ))}
-      {Array.from({ length: Math.ceil(D / chunkSec) }, (_, i) => (
-        <span key={`c${i}`} style={{ position: "absolute", left: X(i * chunkSec), top: 20, height: 4, width: Math.max(1, chunkSec * sx - 1), background: changed.some((r: number[]) => r[0] <= i * chunkSec + 1e-3 && r[1] >= (i + 1) * chunkSec - 1e-3 - 1 / fps) ? "var(--accent)" : "var(--line)" }} title={tx("Chunk {0}", i)} />
-      ))}
-      {scenes.map((s: Json, i: number) => (
-        <span key={i} style={{ position: "absolute", left: X(s.t0), width: Math.max(2, (s.t1 - s.t0) * sx - 2), top: 30, height: 32, borderRadius: 6, background: "var(--take)", border: "1px solid var(--line)", fontSize: 11, lineHeight: "30px", padding: "0 8px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", color: "var(--text-2)" }}>{s.name}</span>
-      ))}
-      {range && <span style={{ position: "absolute", left: X(range[0]), width: Math.max(2, (range[1] - range[0]) * sx), top: 26, bottom: 4, background: "color-mix(in srgb, var(--accent) 18%, transparent)", border: "1px solid var(--accent)", borderRadius: 4, pointerEvents: "none" }} />}
-      {notes.filter((n: Json) => n.status !== "done" && n.status !== "wontfix").map((n: Json) => (
-        <span key={n.id} className="marker note" style={{ left: X(n.t), top: 72, borderColor: n.status === "fixed" ? "var(--good)" : undefined }} title={n.text} onMouseDown={(e) => { e.stopPropagation(); seek(n.t); }}>{n.text}</span>
-      ))}
-      <div className="playhead" style={{ left: X(t) }} />
-      <span className="muted" style={{ position: "absolute", right: 16, bottom: 6, fontSize: 11 }}>{tx("Shift + drag: select a range")}</span>
-    </div>
+    <>
+      <div className="tl-resize" onPointerDown={resize} title={tx("Drag to make the timeline taller or shorter")} />
+      <div className="tl-bar">
+        {tools}
+        <span className="tl-sep" />
+        <button className={`btn icon sm ${snapOn ? "" : "ghost"}`} style={snapOn ? { color: "var(--accent)" } : undefined} title={tx("Snapping (bars stick to the playhead, cuts and each other; hold Alt to drag freely)")} onClick={() => setSnapOn(!snapOn)}><Magnet /></button>
+        <span className="grow" />
+        {hover !== null && <span className="num muted" style={{ fontSize: 11 }}>{tc(hover, fps)}</span>}
+        <button className="btn icon sm ghost" title={tx("Zoom out (Ctrl + wheel)")} onClick={() => zoomAt(zoom / 1.5, t)}><ZoomOut /></button>
+        <input type="range" className="tl-zoom" min={0} max={100} value={Math.round((Math.log(zoom) / Math.log(200)) * 100)} onChange={(e) => zoomAt(Math.exp((+e.target.value / 100) * Math.log(200)), t)} title={tx("Zoom")} />
+        <button className="btn icon sm ghost" title={tx("Zoom in (Ctrl + wheel)")} onClick={() => zoomAt(zoom * 1.5, t)}><ZoomIn /></button>
+        <button className="btn sm ghost" title={tx("Show the whole film")} onClick={() => { setZoom(1); setOff(0); }}>{tx("Fit")}</button>
+      </div>
+      <div className="tl-wrap" ref={wrap} style={{ height: tlH, maxHeight: "none" }}>
+        <div className="tl" ref={box} onMouseDown={down} onMouseMove={(e) => { const r = box.current!.getBoundingClientRect(); setHover(e.clientX - r.left > HEAD ? at(e) : null); }} onMouseLeave={() => setHover(null)} style={{ height }}>
+          {rows.filter((r) => r.kind === "lane").map((r) => <TrackLane key={r.key} lane={r.lane!} top={r.y} sx={sx} pad={HEAD - offC * sx} total={D} snaps={snaps} onSnap={setSnapLine} />)}
+          {ticks.map((x) => (
+            <span key={x} className="num" style={{ position: "absolute", left: X(x), top: 0, fontSize: 10, color: "var(--text-3)", borderLeft: "1px solid var(--line-2)", paddingLeft: 4, height: 14, lineHeight: "12px" }}>{label(x)}</span>
+          ))}
+          {Array.from({ length: Math.ceil(D / chunkSec) }, (_, i) => (
+            <span key={`c${i}`} style={{ position: "absolute", left: X(i * chunkSec), top: 20, height: 4, width: Math.max(1, chunkSec * sx - 1), background: changed.some((r: number[]) => r[0] <= i * chunkSec + 1e-3 && r[1] >= (i + 1) * chunkSec - 1e-3 - 1 / fps) ? "var(--accent)" : "var(--line)" }} title={tx("Chunk {0}", i)} />
+          ))}
+          {scenes.map((s: Json, i: number) => (
+            <span key={i} onMouseDown={(e) => { if (e.detail === 2) { e.stopPropagation(); setRange([s.t0, s.t1]); } }} title={tx("{0} · double-click: select this scene", s.name)} style={{ position: "absolute", left: X(s.t0), width: Math.max(2, (s.t1 - s.t0) * sx - 2), top: 30, height: 32, borderRadius: 6, background: "var(--take)", border: "1px solid var(--line)", fontSize: 11, lineHeight: "30px", padding: "0 8px", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", color: "var(--text-2)" }}>{s.name}</span>
+          ))}
+          {range && <span style={{ position: "absolute", left: X(range[0]), width: Math.max(2, (range[1] - range[0]) * sx), top: 26, bottom: 4, background: "color-mix(in srgb, var(--accent) 12%, transparent)", border: "1px solid var(--accent)", borderRadius: 4, pointerEvents: "none" }} />}
+          {notes.filter((n: Json) => n.status !== "done" && n.status !== "wontfix").map((n: Json) => (
+            <span key={n.id} className="marker note" style={{ left: X(n.t), top: 70, borderColor: n.status === "fixed" ? "var(--good)" : undefined }} title={n.text} onMouseDown={(e) => { e.stopPropagation(); seek(n.t); }}>{n.text}</span>
+          ))}
+          {snapLine !== null && <div style={{ position: "absolute", left: X(snapLine), top: 0, bottom: 0, width: 1, background: "#ff4fa3", pointerEvents: "none", zIndex: 4 }} />}
+          <div className="playhead" style={{ left: X(t), zIndex: 4 }} />
+          <div className="tl-head" style={{ width: HEAD, height }}>
+            <span className="muted" style={{ position: "absolute", left: 10, top: 34, fontSize: 11 }}>{tx("Scenes")}</span>
+            <span className="muted" style={{ position: "absolute", left: 10, top: 72, fontSize: 11 }}>{tx("Notes")}</span>
+            {rows.map((r) => r.kind === "group" ? (
+              <button key={"g" + r.key} className="tl-g" style={{ top: r.y, height: r.h }} onMouseDown={(e) => e.stopPropagation()} onClick={() => setShut({ ...shut, [r.key]: !shut[r.key] })}>
+                <ChevronRight size={12} style={{ transform: shut[r.key] ? undefined : "rotate(90deg)", transition: "transform .12s", flex: "none" }} /><i style={{ background: r.color }} /><span>{r.label}</span><span className="muted">{r.n}</span>
+              </button>
+            ) : (
+              <div key={"h" + r.key} className={`tl-l ${r.lane!.items.some((i) => i.id === r.lane!.sel || r.lane!.selSet?.includes(i.id)) ? "on" : ""}`} style={{ top: r.y, height: r.h }} onMouseDown={(e) => { e.stopPropagation(); const it = r.lane!.items[0]; if (it && r.lane!.items.length === 1) r.lane!.onSelect?.(it.id, e); }} title={r.label}>{r.label}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 

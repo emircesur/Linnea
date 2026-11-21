@@ -1,0 +1,105 @@
+{
+ "linnea": "rppet/1",
+ "version": 1,
+ "label": "Stick figure",
+ "desc": "A stick figure that talks and blinks with the film's voice. idle: breathes; walk: walks on the spot (move the layer to travel); wave; cheer: arms up; jump; point: points to its right and holds; think: hand on chin.",
+ "tags": [
+  "character",
+  "person",
+  "stick",
+  "figure",
+  "çöp adam",
+  "insan"
+ ],
+ "size": [
+  400,
+  600
+ ],
+ "params": {
+  "color": {
+   "type": "color",
+   "default": "#f4f4f4",
+   "label": "Lines"
+  },
+  "head": {
+   "type": "color",
+   "default": "#f4f4f4",
+   "label": "Head"
+  },
+  "face": {
+   "type": "color",
+   "default": "#1d1d1f",
+   "label": "Face"
+  },
+  "width": {
+   "type": "number",
+   "default": 14,
+   "min": 4,
+   "max": 40,
+   "step": 1,
+   "label": "Line width"
+  },
+  "mouth": {
+   "type": "number",
+   "default": 0,
+   "min": 0,
+   "max": 1,
+   "step": 0.05,
+   "label": "Mouth (follows the voice if left alone)"
+  },
+  "blink": {
+   "type": "number",
+   "default": 0,
+   "min": 0,
+   "max": 1,
+   "step": 0.05,
+   "label": "Eyes (blink on their own if left alone)"
+  }
+ },
+ "states": {
+  "idle": {
+   "dur": 2,
+   "loop": true,
+   "label": "Idle"
+  },
+  "walk": {
+   "dur": 0.9,
+   "loop": true,
+   "label": "Walk",
+   "blend": 0.15
+  },
+  "wave": {
+   "dur": 1.2,
+   "loop": true,
+   "label": "Wave",
+   "blend": 0.2
+  },
+  "cheer": {
+   "dur": 0.8,
+   "loop": true,
+   "label": "Cheer",
+   "blend": 0.15
+  },
+  "jump": {
+   "dur": 0.9,
+   "loop": false,
+   "label": "Jump",
+   "blend": 0.1
+  },
+  "point": {
+   "dur": 0.5,
+   "loop": false,
+   "label": "Point",
+   "blend": 0.1
+  },
+  "think": {
+   "dur": 0.6,
+   "loop": false,
+   "label": "Think",
+   "blend": 0.2
+  }
+ },
+ "initial": "idle",
+ "example": "KE.puppet(g, 'guide', t, { use: 'stickman', x: W / 2, y: H * 0.6, t0: 0, t1: 8, states: [{ state: 'wave', t0: 0 }, { state: 'point', t0: 2.5 }] })",
+ "draw": "function (g, p, t, s, u) {\n  const W = u.W, cx = W / 2, PI = Math.PI, n = s.name, st = s.t, k = s.k, ease = u.ease, cl = u.clamp;\n  let y0 = Math.sin(t * 2.2) * 3, aL = -0.3, aR = 0.3, bL = -0.3, bR = 0.3, lL = -0.17, lR = 0.17, sL = -0.17, sR = 0.17, tilt = 0, smile = 0.4;\n  if (n === 'walk') {\n    const ph = st / s.dur * PI * 2;\n    lL = Math.sin(ph) * 0.45; lR = -lL; sL = lL - Math.max(0, Math.cos(ph)) * 0.7; sR = lR - Math.max(0, -Math.cos(ph)) * 0.7;\n    aL = -Math.sin(ph) * 0.5; aR = -aL; bL = aL + 0.35; bR = aR + 0.35; y0 = -Math.abs(Math.sin(ph)) * 8;\n  } else if (n === 'wave') { aR = 2.45; bR = 2.05 + Math.sin(st / s.dur * Math.PI * 4) * 0.45; smile = 0.8; }\n  else if (n === 'cheer') { const w = Math.sin(st / s.dur * PI * 2) * 0.12; aL = -2.55 + w; aR = 2.55 - w; bL = aL - 0.25; bR = aR + 0.25; y0 = -Math.abs(Math.sin(st / s.dur * PI * 2)) * 14; smile = 1; }\n  else if (n === 'jump') {\n    const air = Math.sin(cl((k - 0.2) / 0.6, 0, 1) * PI), cr = k < 0.2 ? Math.sin(k / 0.2 * PI) : k > 0.8 ? Math.sin((k - 0.8) / 0.2 * PI) : 0;\n    y0 = -ease.out(air) * 150 + cr * 34; lL = -0.17 - cr * 0.45; lR = -lL; sL = -0.17 + cr * 0.55; sR = -sL;\n    aL = -0.3 - air * 2.2; aR = -aL; bL = aL - air * 0.3; bR = -bL; smile = 0.6 + air * 0.4;\n  } else if (n === 'point') { const e = ease.out(cl(k, 0, 1)); aR = 0.3 + (PI / 2 - 0.25 - 0.3) * e; bR = 0.3 + (PI / 2 - 0.3) * e; tilt = 0.08 * e; }\n  else if (n === 'think') { const e = ease.inOut(cl(k, 0, 1)); aR = 0.3 - 0.05 * e; bR = 0.3 + (PI - 0.35 - 0.3) * e; tilt = -0.12 * e; smile = 0.4 - 0.5 * e; }\n  if (s.prev && s.mix < 1) { /* the engine blends the drawings */ }\n  const P = (x, y, a, L) => [x + Math.sin(a) * L, y + Math.cos(a) * L];\n  g.save(); g.translate(0, y0);\n  g.lineCap = 'round'; g.lineJoin = 'round'; g.lineWidth = p.width; g.strokeStyle = p.color;\n  const sh = [cx, 205], hip = [cx, 372];\n  const limb = (o, a, b, L1, L2) => { const m = P(o[0], o[1], a, L1), e = P(m[0], m[1], b, L2); g.beginPath(); g.moveTo(o[0], o[1]); g.lineTo(m[0], m[1]); g.lineTo(e[0], e[1]); g.stroke(); return e; };\n  g.beginPath(); g.moveTo(cx, 168); g.lineTo(hip[0], hip[1]); g.stroke();\n  limb(hip, lL, sL, 112, 108); limb(hip, lR, sR, 112, 108);\n  limb(sh, aL, bL, 92, 84); const hand = limb(sh, aR, bR, 92, 84);\n  if (n === 'point') { g.beginPath(); g.arc(hand[0], hand[1], p.width * 0.55, 0, PI * 2); g.fillStyle = p.color; g.fill(); }\n  g.save(); g.translate(cx, 112); g.rotate(tilt);\n  g.fillStyle = p.head; g.beginPath(); g.arc(0, 0, 56, 0, PI * 2); g.fill(); g.stroke();\n  g.fillStyle = p.face;\n  const bl = 1 - cl(p.blink || 0, 0, 1) * 0.9;\n  for (const ex of [-19, 19]) { g.beginPath(); g.ellipse(ex, -8, 6.5, 6.5 * bl + 0.5, 0, 0, PI * 2); g.fill(); }\n  const m = cl(p.mouth || 0, 0, 1);\n  if (m > 0.04) { g.beginPath(); g.ellipse(0, 22, 13, 3 + m * 13, 0, 0, PI * 2); g.fill(); }\n  else { g.strokeStyle = p.face; g.lineWidth = 5; g.beginPath(); g.moveTo(-16, 18 - smile * 2); g.quadraticCurveTo(0, 18 + smile * 16, 16, 18 - smile * 2); g.stroke(); }\n  g.restore(); g.restore();\n}"
+}

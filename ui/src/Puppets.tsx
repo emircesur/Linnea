@@ -3,7 +3,7 @@
 // to the library, or turn any picture into a puppet with ready-made motions.
 import { tx } from "./i18n";
 import { useEffect, useState } from "react";
-import { Plus, RefreshCw, Upload, Trash2 } from "lucide-react";
+import { Diamond, Plus, RefreshCw, Upload, Trash2 } from "lucide-react";
 import { Json, tool } from "./api";
 import type { Layers } from "./Layers";
 
@@ -146,8 +146,8 @@ export function PuppetLibrary({ film, L, t, W, H, dur, say }: { film: string; L:
 }
 
 /** Params and state times of one puppet (a layer, or a code element drawn with KE.puppet). */
-export function PuppetFields({ info, params, states, localT, onParams, onStates, onLipsync, paramsOnly }: { info: PuppetInfo | null; params: Json; states: Json[]; localT: number; onParams: (p: Json) => void; onStates: (s: Json[]) => void; onLipsync?: () => void; paramsOnly?: boolean }) {
-  const [pick, setPick] = useState("");
+export function PuppetFields({ info, params, states, localT, onParams, onStates, onLipsync, paramsOnly, keyed, onKey }: { info: PuppetInfo | null; params: Json; states: Json[]; localT: number; onParams: (p: Json) => void; onStates: (s: Json[]) => void; onLipsync?: () => void; paramsOnly?: boolean; keyed?: (k: string) => "" | "anim" | "on"; onKey?: (k: string) => void }) {
+  const [, setPick] = useState("");
   if (!info) return <span className="muted" style={{ fontSize: 12 }}>{tx("Loading the puppet file…")}</span>;
   const names = Object.keys(info.states || {});
   const field = (k: string, d: Json) => {
@@ -157,7 +157,7 @@ export function PuppetFields({ info, params, states, localT, onParams, onStates,
     if (d?.type === "color") return <div className="field" key={k}><label>{label}</label><input className="input" type="color" style={{ padding: 2, width: 40 }} value={v || "#ffffff"} onChange={(e) => set(e.target.value)} /></div>;
     if (d?.type === "bool") return <div className="field" key={k}><label>{label}</label><input type="checkbox" checked={!!v} onChange={(e) => set(e.target.checked)} /></div>;
     if (d?.type === "select") return <div className="field" key={k}><label>{label}</label><select className="select" value={v ?? ""} onChange={(e) => set(e.target.value)}>{(d.options || []).map((o: any) => <option key={String(o)} value={o}>{String(o)}</option>)}</select></div>;
-    if (d?.type === "number") return <div className="field" key={k}><label>{label}</label><input className="input num" type="number" step={d.step ?? 0.05} min={d.min} max={d.max} key={`${k}${v}`} defaultValue={v} onBlur={(e) => { let x = +e.target.value; if (!isFinite(x)) return; if (d.min != null) x = Math.max(d.min, x); if (d.max != null) x = Math.min(d.max, x); if (x !== v) set(x); }} /></div>;
+    if (d?.type === "number") return <div className="field" key={k}><label className="rowx" style={{ gap: 4 }}><span className="grow">{label}</span>{onKey && <button className={`nf-k ${keyed?.(k) || ""}`} title={keyed?.(k) === "on" ? tx("Remove the key at this second") : tx("Key this value at this second: it animates between keys")} onClick={() => onKey(k)}><Diamond /></button>}</label><input className="input num" type="number" step={d.step ?? 0.05} min={d.min} max={d.max} key={`${k}${v}`} defaultValue={typeof v === "number" ? Math.round(v * 1000) / 1000 : v} onBlur={(e) => { let x = +e.target.value; if (!isFinite(x)) return; if (d.min != null) x = Math.max(d.min, x); if (d.max != null) x = Math.min(d.max, x); if (x !== v) set(x); }} /></div>;
     return <div className="field" key={k} style={{ gridColumn: "1 / -1" }}><label>{label}</label><input className="input" key={`${k}${v}`} defaultValue={v ?? ""} onBlur={(e) => e.target.value !== v && set(e.target.value)} /></div>;
   };
   return (
@@ -184,11 +184,12 @@ export function PuppetFields({ info, params, states, localT, onParams, onStates,
             </div>
           ))}
           {!states.length && <span className="muted" style={{ fontSize: 12 }}>{tx("Plays \"")}{info.states[info.initial || names[0]]?.label || info.initial || names[0]}{tx("\" from start to end.")}</span>}
-          <div className="rowx">
-            <select className="select grow" value={pick || names[0]} onChange={(e) => setPick(e.target.value)}>
-              {names.map((n) => <option key={n} value={n}>{info.states[n]?.label || n}</option>)}
-            </select>
-            <button className="btn sm" onClick={() => onStates([...states.filter((x) => Math.abs(x.t0 - localT) > 0.02), { state: pick || names[0], t0: r2(Math.max(0, localT)), blend: 0.3 }])}>{tx("Start at this second")}</button>
+          <span className="muted" style={{ fontSize: 11 }}>{tx("Click a state to start it at this second:")}</span>
+          <div className="rowx" style={{ flexWrap: "wrap", gap: 4 }}>
+            {names.map((n) => {
+              const now = [...states].filter((x) => x.t0 <= localT + 1e-3).sort((a, b) => a.t0 - b.t0).pop()?.state ?? (info.initial || names[0]);
+              return <button key={n} className={`chip ${now === n ? "on" : ""}`} title={`${info.states[n]?.dur ?? 1} s${info.states[n]?.loop ? " · loop" : ""}`} onClick={() => { setPick(n); onStates([...states.filter((x) => Math.abs(x.t0 - localT) > 0.02), { state: n, t0: r2(Math.max(0, localT)), blend: 0.3 }]); }}>{info.states[n]?.label || n}</button>;
+            })}
           </div>
         </div>
       )}

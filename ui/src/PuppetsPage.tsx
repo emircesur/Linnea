@@ -29,7 +29,7 @@ export function PuppetPreview({ def, state, params, style }: { def: Json | null;
   const ref = useRef<HTMLIFrameElement>(null);
   const send = () => ref.current?.contentWindow?.postMessage({ def, state: state || "", params: params || {} }, "*");
   useEffect(send, [def, state, JSON.stringify(params || {})]);
-  return <iframe ref={ref} title="kukla" sandbox="allow-scripts" srcDoc={PREVIEW_DOC} onLoad={send} style={{ border: 0, width: "100%", aspectRatio: "1", display: "block", background: "repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 16px 16px", borderRadius: 8, ...style }} />;
+  return <iframe ref={ref} title="kukla" sandbox="allow-scripts" srcDoc={PREVIEW_DOC} onLoad={send} style={{ border: 0, width: "100%", aspectRatio: "1", display: "block", colorScheme: "normal", background: "repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 16px 16px", borderRadius: 8, ...style }} />;
 }
 
 export function PuppetsPage({ say }: { say: (s: string) => void }) {

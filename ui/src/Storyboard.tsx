@@ -1,6 +1,6 @@
 // The film at a glance: small frames across its length, drawn on a hidden copy of the page so the preview
 // never moves. Click one to go there; the one on screen is marked. Kept until the film's code changes.
-import { tx } from "./i18n";
+import { lang, tx } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { Json } from "./api";
 
@@ -64,11 +64,18 @@ export function Storyboard({ url, rev, lang, W, H, dur, scenes, t, seek }: { url
   );
 }
 
-const KEYS: [string, string][] = [
-  ["Space", "Play / pause"], ["← →", "One frame"], ["Shift + ← →", "One second"], [", .", "One frame"],
-  ["Home / End", "Start / end"], ["PageUp / PageDown", "Previous / next scene"], ["N", "Note on the frame"],
-  ["B", "Storyboard"], ["1 – 5", "Versions, sound, layers, languages, assistant"], ["Ctrl + Z / Ctrl + Y", "Undo / redo"],
-  ["Esc", "Back to the live view"], ["?", "This list"],
+const KEYS: [string, [string, string][]][] = [
+  ["Play", [
+    ["Space / K", "Play / pause"], [", .", "One frame"], ["← →", "One frame (nothing selected)"], ["Shift + ← →", "One second"], ["J / L", "One second back / on"],
+    ["Home / End", "Start / end"], ["PageUp / PageDown", "Previous / next scene"], ["I / O", "Range in / out"], ["Shift + drag", "Select a range on the timeline"],
+    ["N", "Note on the frame"], ["B", "Storyboard"], ["G", "Safe areas / thirds"], ["1 – 5", "Properties, sound, languages, assistant, versions"], ["A", "Add panel"],
+  ]],
+  ["Edit", [
+    ["Ctrl + K", "Every command, by name"], ["Ctrl + Z / Ctrl + Y", "Undo / redo"], ["Shift + click", "Select several"], ["Ctrl + A", "Select every layer on screen"],
+    ["← → ↑ ↓", "Nudge 1 px (Shift: 10 px)"], ["Ctrl + D", "Duplicate"], ["Ctrl + C / X / V", "Copy / cut / paste (also between films)"], ["Delete", "Delete"],
+    ["S", "Split at the playhead"], ["Alt + [ / ]", "Start / end at the playhead"], ["Ctrl + [ / ]", "Send backward / bring forward (Shift: to the back / front)"],
+    ["H", "Hide / show"], ["Ctrl + L", "Lock / unlock"], ["Shift (drag)", "Keep the shape, one axis, 15° steps"], ["Alt (drag)", "From the centre; no snapping"], ["Ctrl + wheel", "Zoom the timeline"], ["Esc", "Deselect, back to the live view"],
+  ]],
 ];
 
 export function Shortcuts({ close }: { close: () => void }) {
@@ -79,10 +86,17 @@ export function Shortcuts({ close }: { close: () => void }) {
   }, [close]);
   return (
     <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 50, display: "grid", placeItems: "center" }}>
-      <div className="card" onClick={(e) => e.stopPropagation()} style={{ padding: 20, width: 420, maxWidth: "calc(100vw - 32px)" }}>
+      <div className="card" onClick={(e) => e.stopPropagation()} style={{ padding: 20, width: 860, maxWidth: "calc(100vw - 32px)", maxHeight: "86vh", overflow: "auto" }}>
         <h2 style={{ marginBottom: 12 }}>{tx("Keyboard shortcuts")}</h2>
-        <div className="kv">
-          {KEYS.map(([k, d]) => [<span key={k} className="kbd" style={{ justifySelf: "start" }}>{k}</span>, <span key={k + "d"} style={{ color: "var(--text-2)" }}>{tx(d)}</span>])}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 24 }}>
+          {KEYS.map(([g, list]) => (
+            <div key={g}>
+              <div className="sub-h" style={{ marginBottom: 8 }}>{g === "Edit" && lang === "tr" ? "Düzen" : tx(g)}</div>
+              <div className="kv" style={{ fontSize: 12, gridTemplateColumns: "auto 1fr", alignItems: "center" }}>
+                {list.map(([k, d]) => [<span key={k} className="kbd" style={{ justifySelf: "start", whiteSpace: "nowrap" }}>{k}</span>, <span key={k + "d"} style={{ color: "var(--text-2)" }}>{tx(d)}</span>])}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

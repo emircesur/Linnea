@@ -81,7 +81,11 @@ fix film.js -> hub_frame the same t -> hub_note_update id=... status=fixed reply
     Talking characters: give the puppet `mouth` and `blink` number params (0..1); after `hub_lipsync film=…` the mouth
     follows the film's voice and the eyes blink by themselves (`KE.mouth(t)`, `KE.blink(t, seed)` in code). The `talker`
     puppet is a ready narrator. A state can blend in: `states: [{state, t0, blend: seconds}]`. A layer can follow a path:
-    items2d `path: [[x, y], ...]` (centre points), `pathTurn`, `pathEase`.
+    items2d `path: [[x, y], ...]` (centre points), `pathTurn`, `pathEase`. A puppet layer also takes `speed` (state
+    motion ×), `fx` / `fy` (mirror) and `pkeys: [{t, p: {param: value}, ease}]` (numeric params animated over film time).
+  - Ready rich puppets in the library: `stickman` (idle, walk, wave, cheer, jump, point, think; talks and blinks),
+    `talker` (narrator), `check` (tick or cross drawn on), `cursor` (mouse pointer that clicks), `heart` (beat, burst),
+    `confetti` (burst, rain; size the layer to the area), `timer` (countdown ring), `sparkle`, `pencil`, `bubble`.
   - Puppets a film keeps only in its own puppets/ folder are saved to the library by `hub_live` (the result
     lists them under `puppets_saved_to_library`); `puppet_harvest film=… all=true` also sends the ones you changed.
 - Languages (one film, many versions): draw every on-screen text through KE.text / el() with a stable id (or
@@ -140,8 +144,13 @@ AI tools, each with a local and an API choice (nothing leaves the machine unless
 
 Layers and motion (films and footage reels alike): `reel_layers` (a reel) / `hub_2d` (a film) hold items2d:
 text, image, rect, counter, marker (handwriting), arrow, phone (mockup with a notification), lower (lower
-third), progress. Each can carry `keys: [{t, x, y, w, h, rot, scale, opacity, ease}]` (keyframes) and a
-`parent` (a rig: the child follows the parent's motion). Reel layer times are EDIT seconds; the user drags
+third), progress, ellipse, puppet. Each can carry `keys: [{t, x, y, w, h, rot, scale, opacity, ease}]` (keyframes; a key
+may hold only some properties) and a `parent` (a rig: the child follows the parent's motion). The look: `anim` (way
+in) and `animOut` (way out): none|fade|slide-up|slide-down|slide-left|slide-right|pop|zoom|spin|blur|wipe over `fade`
+seconds; `shadow` (colour) + `shadowBlur/X/Y`, `blur`, `blend` (canvas composite: multiply, screen, overlay…), `fx`/`fy`,
+`border` + `borderWidth`, `bg2` + `gradAngle` (gradient fill). Text: `font, size, weight, italic, align, spacing,
+lineHeight, upper, stroke, strokeWidth, typing: 'chars'|'words'` (typed out over `reveal` s). Image: `fit:
+cover|contain`, `radius`. `label` names a layer, `locked` keeps it from being dragged in the app. Reel layer times are EDIT seconds; the user drags
 and edits them in the editor. Any custom animation can go into the reel's layer page film.js (the folder
 `reel_layers` returns), drawn transparent over the reel.
 
