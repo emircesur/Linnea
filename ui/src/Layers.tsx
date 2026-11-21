@@ -5,7 +5,8 @@ import { tx } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { Json, tool } from "./api";
 import { evalItem, Item } from "./Motion";
-import { copyItems, duplicate, hasClip, layerName, pasteItems, r2, remove, reorder, replace, setProp, shift, split, trim, uid } from "./LayerOps";
+import { copyItems, duplicate, group, hasClip, layerName, pasteItems, r2, remove, reorder, replace, setProp, shift, split, topOf, trim, uid, ungroup, withInside } from "./LayerOps";
+import { groupsOf } from "./Motion";
 
 export { evalItem } from "./Motion";
 export type { Item, Key } from "./Motion";
@@ -75,7 +76,7 @@ export function newItem(kind: string, t: number, dur: number, W: number, H: numb
 }
 
 /** Something dragged from the Add panel onto the frame: the panel puts its handler here. */
-export const DROP: { fn: null | ((payload: Json, x: number, y: number) => void) } = { fn: null };
+export const DROP: { fn: null | ((payload: Json, x: number, y: number) => void); sound: null | ((src: string, at: number) => void) } = { fn: null, sound: null };
 
 /** A drop on the frame at (px, py): pictures, text files, or an item from the Add panel. */
 export async function dropOnFrame(e: React.DragEvent, px: number, py: number, L: Layers, t: number, W: number, H: number, select?: (id: string) => void) {
@@ -87,7 +88,16 @@ export async function dropOnFrame(e: React.DragEvent, px: number, py: number, L:
   }
   const f = e.dataTransfer.files?.[0];
   if (!f) return;
-  if (f.type.startsWith("image/")) {
+  if (f.type.startsWith("audio/") && DROP.sound) {
+    DROP.sound(await L.upload(f), t);
+  } else if (f.type.startsWith("video/")) {
+    if (f.size > 400e6) return;
+    const src = await L.upload(f);
+    const it = await videoItem(src, f.name.replace(/\.[^.]+$/, ""), t, t + 600, W, H, L.url.replace(/[^/]*$/, ""));
+    const pl = { ...it, x: Math.round(px - it.w / 2), y: Math.round(py - it.h / 2) };
+    L.update([...L.items, pl]);
+    select?.(pl.id);
+  } else if (f.type.startsWith("image/")) {
     const src = await L.upload(f);
     const w = Math.round(W * 0.4);
     const it: Item = { id: uid(), kind: "image", src, label: f.name.replace(/\.[^.]+$/, ""), t0: r2(t), t1: r2(t + 3), x: Math.round(px - w / 2), y: Math.round(py - w / 2), w, h: w, opacity: 1, fade: 0.25, fit: "cover" };
@@ -107,16 +117,19 @@ const HANDLES: [number, number, string][] = [[-1, -1, "nwse"], [0, -1, "ns"], [1
 /** Edit boxes over the picture: drag to move (Shift: one axis), any handle to resize (Shift: keep the shape,
  *  Alt: from the centre), the round handle to turn (Shift: 15° steps). Edges snap to the frame's edges and
  *  centre and to the other layers; Alt while dragging turns snapping off. Shift-click selects several. */
-export function LayerOverlay({ L, t, sel, setSel, W, H, passThrough, pathFor, multi, setMulti, snap = true, others, onMenu }: {
+export function LayerOverlay({ L, t, sel, setSel, W, H, passThrough, pathFor, multi, setMulti, snap = true, others, onMenu, view }: {
   L: Layers; t: number; sel: string; setSel: (s: string) => void; W: number; H: number; passThrough?: boolean; pathFor?: string;
   multi?: string[]; setMulti?: (ids: string[]) => void; snap?: boolean; others?: { x: number; y: number; w: number; h: number }[]; onMenu?: (x: number, y: number, id: string) => void;
+  /** the preview's scale (screen px per frame px), when the page knows it: handles keep their size when zooming */
+  view?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState("");
   const [ghost, setGhost] = useState<Item[] | null>(null);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [readout, setReadout] = useState("");
-  const [k, setK] = useState(2);
+  const [k0, setK] = useState(2);
+  const k = view ? 1 / view : k0;
   useEffect(() => {
     const ro = new ResizeObserver(() => { const r = ref.current?.getBoundingClientRect(); if (r?.width) setK(W / r.width); });
     if (ref.current) ro.observe(ref.current);
@@ -137,6 +150,15 @@ export function LayerOverlay({ L, t, sel, setSel, W, H, passThrough, pathFor, mu
   const begin = (e: React.PointerEvent, it: Item, mode: "move" | "size" | "rot", hx = 0, hy = 0) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    // a layer inside a group: the first click takes the whole group, a click once the group (or something in
+    // it) is chosen takes the layer itself; Ctrl / Cmd goes straight to the layer
+    if (mode === "move" && !e.ctrlKey && !e.metaKey) {
+      const top = topOf(L.items, it);
+      if (top !== it) {
+        const inside = withInside(L.items, [top.id]);
+        if (!chosen.some((c) => inside.includes(c))) it = top;
+      }
+    }
     const additive = e.shiftKey && mode === "move";
     pick(it.id, additive);
     if (additive) return;
@@ -171,6 +193,13 @@ export function LayerOverlay({ L, t, sel, setSel, W, H, passThrough, pathFor, mu
         }
         next = base.map((x) => (movers.includes(x) ? shift(base, x, t, Math.round(dx), Math.round(dy)) : x));
         setReadout(`${Math.round(s0.x + dx)}, ${Math.round(s0.y + dy)}`);
+      } else if (mode === "size" && it.kind === "group") {
+        // a group grows and shrinks as a whole, around its centre
+        const cxs = (box ? box.left + box.width / 2 : x0), cys = (box ? box.top + box.height / 2 : y0);
+        const f = Math.max(0.05, Math.hypot(ev.clientX - cxs, ev.clientY - cys) / Math.max(1, Math.hypot(x0 - cxs, y0 - cys)));
+        const sc = Math.round(own0.scale * f * 100) / 100;
+        next = base.map((x) => (x.id === it.id ? setProp(base, x, t, "scale", sc) : x));
+        setReadout(`×${sc}`);
       } else if (mode === "size") {
         const th = (s0.rot * Math.PI) / 180, sc = s0.scale || 1, cs = Math.cos(th), sn = Math.sin(th);
         const lx = (dx * cs + dy * sn) / sc, ly = (-dx * sn + dy * cs) / sc;
@@ -248,9 +277,11 @@ export function LayerOverlay({ L, t, sel, setSel, W, H, passThrough, pathFor, mu
           {guides.map((g, i) => (g.x !== undefined ? <line key={i} x1={g.x} x2={g.x} y1={0} y2={H} stroke="#ff4fa3" strokeWidth={lw} /> : <line key={i} y1={g.y} y2={g.y} x1={0} x2={W} stroke="#ff4fa3" strokeWidth={lw} />))}
         </svg>
       )}
-      {items.filter((x) => t >= x.t0 && t < x.t1).map((x) => {
+      {items.filter((x) => t >= x.t0 && t < x.t1 && groupsOf(items, x).every((g) => t >= g.t0 && t < g.t1)).map((x) => {
         const s = evalItem(items, x, t);
         const on = chosen.includes(x.id);
+        const grp = x.kind === "group";
+        if (grp && !on) return null;
         const main = x.id === sel;
         const col = x.hidden ? "rgba(160,160,160,.7)" : on ? "var(--accent)" : "rgba(255,255,255,.45)";
         const hs = (11 * k) / (s.scale || 1);
@@ -259,15 +290,15 @@ export function LayerOverlay({ L, t, sel, setSel, W, H, passThrough, pathFor, mu
           <div key={x.id} data-layer={x.id} onPointerDown={(e) => begin(e, x, "move")} onContextMenu={(e) => { if (!onMenu) return; e.preventDefault(); e.stopPropagation(); if (!on) pick(x.id, false); onMenu(e.clientX, e.clientY, x.id); }}
             onDoubleClick={() => ["text", "marker", "lower"].includes(x.kind) && !x.locked && setEditing(x.id)}
             title={layerName(x)}
-            style={{ pointerEvents: pathFor || x.locked ? "none" : "auto", position: "absolute", left: s.x, top: s.y, width: s.w, height: s.h, outline: `${bw}px ${x.hidden ? "dotted" : on ? "solid" : "dashed"} ${col}`, background: x.hidden ? "repeating-linear-gradient(45deg, rgba(160,160,160,.12) 0 8px, transparent 8px 16px)" : undefined, cursor: "move", transform: `rotate(${s.rot}deg) scale(${s.scale})`, zIndex: main ? 2 : 1 }}>
-            {main && single && !x.locked && HANDLES.map(([hx, hy, c]) => (
+            style={{ pointerEvents: pathFor || x.locked || grp ? "none" : "auto", position: "absolute", left: s.x, top: s.y, width: s.w, height: s.h, outline: `${bw}px ${x.hidden ? "dotted" : on ? "solid" : "dashed"} ${col}`, outlineOffset: grp ? 6 * k : undefined, background: x.hidden ? "repeating-linear-gradient(45deg, rgba(160,160,160,.12) 0 8px, transparent 8px 16px)" : undefined, cursor: "move", transform: `rotate(${s.rot}deg) scale(${s.scale})`, zIndex: main ? 2 : 1 }}>
+            {main && single && !x.locked && HANDLES.filter(([hx, hy]) => !grp || (hx && hy)).map(([hx, hy, c]) => (
               <div key={`${hx}${hy}`} onPointerDown={(e) => begin(e, x, "size", hx, hy)}
-                style={{ position: "absolute", left: `calc(${((hx + 1) / 2) * 100}% - ${hs / 2}px)`, top: `calc(${((hy + 1) / 2) * 100}% - ${hs / 2}px)`, width: hs, height: hs, background: "#fff", border: `${bw}px solid var(--accent)`, borderRadius: hx && hy ? hs / 4 : hs / 2, cursor: `${c}-resize`, boxSizing: "border-box" }} />
+                style={{ position: "absolute", left: `calc(${((hx + 1) / 2) * 100}% - ${hs / 2}px)`, top: `calc(${((hy + 1) / 2) * 100}% - ${hs / 2}px)`, width: hs, height: hs, background: "#fff", border: `${bw}px solid var(--accent)`, borderRadius: hx && hy ? hs / 4 : hs / 2, cursor: `${c}-resize`, boxSizing: "border-box", pointerEvents: "auto" }} />
             ))}
             {main && single && !x.locked && (
               <>
                 <div style={{ position: "absolute", left: "50%", top: -hs * 2.4, width: bw, height: hs * 2.4, background: "var(--accent)", pointerEvents: "none" }} />
-                <div title={tx("Turn (Shift: 15° steps)")} onPointerDown={(e) => begin(e, x, "rot")} style={{ position: "absolute", left: `calc(50% - ${hs * 0.6}px)`, top: -hs * 3.4, width: hs * 1.2, height: hs * 1.2, borderRadius: "50%", background: "var(--accent)", border: `${bw}px solid #fff`, cursor: "grab", boxSizing: "border-box" }} />
+                <div title={tx("Turn (Shift: 15° steps)")} onPointerDown={(e) => begin(e, x, "rot")} style={{ pointerEvents: "auto", position: "absolute", left: `calc(50% - ${hs * 0.6}px)`, top: -hs * 3.4, width: hs * 1.2, height: hs * 1.2, borderRadius: "50%", background: "var(--accent)", border: `${bw}px solid #fff`, cursor: "grab", boxSizing: "border-box" }} />
               </>
             )}
             {main && readout && <div style={{ position: "absolute", left: 0, top: "100%", marginTop: hs, transform: `scale(${k / (s.scale || 1)})`, transformOrigin: "0 0", font: "600 11px var(--mono)", background: "var(--accent)", color: "var(--on-accent)", padding: "1px 6px", borderRadius: 4, whiteSpace: "nowrap", pointerEvents: "none" }}>{readout}</div>}
@@ -312,11 +343,17 @@ export function useLayerKeys({ L, t, sel, setSel, multi, setMulti, active, say }
       if (mod && k === "a" && !e.shiftKey) { done(); choose(items.filter((x) => t >= x.t0 && t < x.t1 && !x.locked).map((x) => x.id)); return; }
       if (!ids.length) return;
       const picked = items.filter((x) => ids.includes(x.id));
+      if (mod && k === "g") {
+        done();
+        if (e.shiftKey) { const out = picked.filter((x) => x.kind === "group").reduce((acc, g) => { const r = ungroup(acc.items, g.id); return { items: r.items, ids: [...acc.ids, ...r.ids] }; }, { items, ids: [] as string[] }); L.update(out.items); choose(out.ids); }
+        else { const r = group(items, ids, t); if (r.id) { L.update(r.items); choose([r.id]); } }
+        return;
+      }
       if (e.key === "Delete" || e.key === "Backspace") { done(); L.update(remove(items, ids)); choose([]); }
       else if (e.key === "Escape") { done(); choose([]); }
       else if (mod && k === "d") { done(); const r = duplicate(items, ids); L.update(r.items); choose(r.ids); }
-      else if (mod && k === "c") { done(); copyItems(picked); say?.(tx("{0} layers copied", picked.length)); }
-      else if (mod && k === "x") { done(); copyItems(picked); L.update(remove(items, ids)); choose([]); }
+      else if (mod && k === "c") { done(); copyItems(picked, items); say?.(tx("{0} layers copied", picked.length)); }
+      else if (mod && k === "x") { done(); copyItems(picked, items); L.update(remove(items, ids)); choose([]); }
       else if (mod && k === "l") { done(); const lock = !picked.every((x) => x.locked); L.update(replace(items, ids, (x) => ({ ...x, locked: lock || undefined }))); }
       else if (mod && (e.key === "]" || e.key === "[")) { done(); L.update(reorder(items, ids, e.key === "]" ? (e.shiftKey ? "top" : "up") : e.shiftKey ? "bottom" : "down")); }
       else if (e.altKey && (e.key === "[" || e.key === "]")) { done(); L.update(trim(items, ids, t, e.key === "[" ? "start" : "end")); }
@@ -349,4 +386,25 @@ export function ScaledStage({ W, H, children }: { W: number; H: number; children
       <div style={{ position: "absolute", left: 0, top: 0, width: W, height: H, transform: `scale(${s})`, transformOrigin: "0 0" }}>{children}</div>
     </div>
   );
+}
+
+/** Read a video's size and length (from the film's folder), for a new video layer. */
+export function videoMeta(src: string): Promise<{ w: number; h: number; dur: number }> {
+  return new Promise((ok) => {
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.muted = true;
+    const done = () => ok({ w: v.videoWidth || 1920, h: v.videoHeight || 1080, dur: isFinite(v.duration) ? v.duration : 5 });
+    v.onloadedmetadata = done;
+    v.onerror = done;
+    setTimeout(done, 8000);
+    v.src = src;
+  });
+}
+/** A video layer filling the frame as far as it fits, from t for the video's length (up to `end`). */
+export async function videoItem(src: string, label: string, t: number, end: number, W: number, H: number, base = ""): Promise<Item> {
+  const m = await videoMeta(base + src);
+  const s = Math.min(W / m.w, H / m.h);
+  const w = Math.round(m.w * s), h = Math.round(m.h * s);
+  return { id: uid("v"), kind: "video", src, label, t0: r2(t), t1: r2(Math.min(end, t + m.dur)), x: Math.round((W - w) / 2), y: Math.round((H - h) / 2), w, h, opacity: 1, fade: 0, fit: "cover", sound: true, fileDur: Math.round(m.dur * 100) / 100 };
 }

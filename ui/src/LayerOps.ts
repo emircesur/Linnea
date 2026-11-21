@@ -1,12 +1,14 @@
 // What can be done to layers, as plain functions over the item list: duplicate, split, trim, order, align,
 // distribute, keyframes per property, motion presets, text looks, a clipboard that works across films.
 import { tx } from "./i18n";
-import { evalItem, Item, Key } from "./Motion";
+import { COLORS, evalItem, groupsOf, Item, Key, STYLE_NUM, styled } from "./Motion";
 import { Json } from "./api";
 
 export const r2 = (x: number) => Math.round(x * 100) / 100;
 export const PROPS = ["x", "y", "w", "h", "rot", "scale", "opacity"] as const;
 export type Prop = (typeof PROPS)[number];
+/** Everything a key can hold: the place, and style numbers and colours. */
+export const KEYABLE: string[] = [...PROPS, ...STYLE_NUM, ...COLORS];
 export const uid = (p = "l") => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 const NEAR = 0.02;
 
@@ -15,32 +17,46 @@ export function layerName(it: Item): string {
   return it.label || (it.text ? String(it.text).split("\n")[0] : "") || it.title || it.puppet || kindLabel(it.kind);
 }
 export function kindLabel(k: string): string {
-  return ({ text: tx("Text"), image: tx("Picture"), rect: tx("Box"), ellipse: tx("Circle"), counter: tx("Counter"), marker: tx("Handwriting"), arrow: tx("Arrow"), phone: tx("Phone"), lower: tx("Lower third"), progress: tx("Progress"), puppet: tx("Puppet") } as Json)[k] || k;
+  return ({ group: tx("Group"), video: tx("Video"), text: tx("Text"), image: tx("Picture"), rect: tx("Box"), ellipse: tx("Circle"), counter: tx("Counter"), marker: tx("Handwriting"), arrow: tx("Arrow"), phone: tx("Phone"), lower: tx("Lower third"), progress: tx("Progress"), puppet: tx("Puppet") } as Json)[k] || k;
 }
 
 // ---------- the list ----------
 export const replace = (items: Item[], ids: string[], f: (it: Item) => Item) => items.map((x) => (ids.includes(x.id) ? f(x) : x));
 
+/** The layers inside groups among ids (all the way down), after the ids themselves. */
+export function withInside(items: Item[], ids: string[]): string[] {
+  const out = [...ids];
+  for (let i = 0; i < out.length; i++) for (const x of items) if (x.parent === out[i] && !out.includes(x.id) && items.find((g) => g.id === out[i])?.kind === "group") out.push(x.id);
+  return out;
+}
+
 export function duplicate(items: Item[], ids: string[], dx = 24, dy = 24): { items: Item[]; ids: string[] } {
+  // a group comes with what is in it; the copies inside follow the copied group
+  const all = withInside(items, ids);
+  const map = new Map(all.map((id) => [id, uid(items.find((x) => x.id === id)?.kind === "puppet" ? "p" : "l")]));
   const out = [...items];
   const made: string[] = [];
-  for (const id of ids) {
+  for (const id of all) {
     const i = out.findIndex((x) => x.id === id);
     if (i < 0) continue;
     const src = out[i];
     const c: Item = JSON.parse(JSON.stringify(src));
-    c.id = uid(src.kind === "puppet" ? "p" : "l");
-    c.x = (c.x || 0) + dx; c.y = (c.y || 0) + dy;
-    if (c.keys) c.keys = c.keys.map((k: Key) => ({ ...k, ...(k.x !== undefined ? { x: k.x + dx } : {}), ...(k.y !== undefined ? { y: k.y + dy } : {}) }));
-    if (c.path) c.path = c.path.map((p: number[]) => [p[0] + dx, p[1] + dy]);
-    if (c.label) c.label = c.label + " " + tx("copy");
+    c.id = map.get(id)!;
+    const inner = !!c.parent && map.has(c.parent);
+    if (inner) c.parent = map.get(c.parent!);
+    const ddx = inner ? 0 : dx, ddy = inner ? 0 : dy;
+    c.x = (c.x || 0) + ddx; c.y = (c.y || 0) + ddy;
+    if (c.keys) c.keys = c.keys.map((k: Key) => ({ ...k, ...(k.x !== undefined ? { x: k.x + ddx } : {}), ...(k.y !== undefined ? { y: k.y + ddy } : {}) }));
+    if (c.path) c.path = c.path.map((p: number[]) => [p[0] + ddx, p[1] + ddy]);
+    if (c.label && !inner) c.label = c.label + " " + tx("copy");
     out.splice(i + 1, 0, c);
-    made.push(c.id);
+    if (ids.includes(id)) made.push(c.id);
   }
   return { items: out, ids: made };
 }
 
 export function remove(items: Item[], ids: string[]): Item[] {
+  ids = withInside(items, ids);
   return items.filter((x) => !ids.includes(x.id)).map((x) => (x.parent && ids.includes(x.parent) ? { ...x, parent: undefined } : x));
 }
 
@@ -103,25 +119,28 @@ export const animated = (it: Item, p: string) => (it.keys || []).some((k) => (k 
 export const keyTimes = (it: Item) => [...new Set((it.keys || []).map((k) => k.t).concat((it.pkeys || []).map((k: Json) => k.t)))].sort((a, b) => a - b);
 
 /** Set one property: on an animated property that is a key at t (auto-key), otherwise the base value. */
-export function setProp(items: Item[], it: Item, t: number, p: string, v: number | undefined): Item {
-  if (!(PROPS as readonly string[]).includes(p) || !animated(it, p)) return { ...it, [p]: v };
+export function setProp(items: Item[], it: Item, t: number, p: string, v: any): Item {
+  if (!KEYABLE.includes(p) || !animated(it, p)) return { ...it, [p]: v };
   const keys = (it.keys || []).filter((k) => Math.abs(k.t - t) > NEAR);
   const old = keyAt(it, t) || { t: r2(t), ease: "inOut" };
   return { ...it, keys: [...keys, { ...old, [p]: v }].sort((a, b) => a.t - b.t) };
 }
 
 /** A key for property p at t (with the value it has now), or take it away if there is one. */
-export function toggleKey(items: Item[], it: Item, t: number, p: string): Item {
+export function toggleKey(items: Item[], it: Item, t: number, p: string, fallback?: any): Item {
   const k = keyAt(it, t) as Json | undefined;
   if (k && k[p] !== undefined) {
     const nk = { ...k };
     delete nk[p];
     const rest = (it.keys || []).filter((x) => x !== k);
-    const keep = PROPS.some((q) => nk[q] !== undefined);
+    const keep = KEYABLE.some((q) => nk[q] !== undefined);
     return { ...it, keys: keep ? [...rest, nk].sort((a, b) => a.t - b.t) : rest.length ? rest : undefined };
   }
-  const s = evalItem(items, { ...it, parent: undefined }, t);
-  const v = p === "rot" || p === "scale" || p === "opacity" ? r2(s[p]) : Math.round(s[p]);
+  let v: any;
+  if ((PROPS as readonly string[]).includes(p)) {
+    const s = evalItem(items, { ...it, parent: undefined }, t);
+    v = p === "rot" || p === "scale" || p === "opacity" ? r2(s[p]) : Math.round(s[p]);
+  } else v = styled(it, t)[p] ?? it[p] ?? fallback ?? (COLORS.includes(p) ? "#ffffff" : 0);
   const keys = (it.keys || []).filter((x) => x !== k);
   // the first key of a property also pins its value where it was: the base becomes the start
   return { ...it, keys: [...keys, { ...(k || { t: r2(t), ease: "inOut" }), [p]: v }].sort((a, b) => a.t - b.t) };
@@ -275,11 +294,45 @@ export const BLENDS: [string, string][] = [
   ["normal", tx("Normal")], ["multiply", tx("Multiply")], ["screen", tx("Screen")], ["overlay", tx("Overlay")], ["darken", tx("Darken")], ["lighten", tx("Lighten")],
   ["color-dodge", tx("Colour dodge")], ["soft-light", tx("Soft light")], ["difference", tx("Difference")],
 ];
-export const EASES = ["inOut", "out", "in", "linear", "back"];
+export const EASES = ["inOut", "out", "in", "linear", "back", "sine", "expo", "elastic", "bounce", "hold"];
+
+// ---------- groups ----------
+/** Put layers in a new group (a frame that moves, turns, scales and fades them together). */
+export function group(items: Item[], ids: string[], t: number): { items: Item[]; id?: string } {
+  const picked = items.filter((x) => ids.includes(x.id));
+  if (picked.length < 1) return { items };
+  // a layer rigged to something outside stays with its rig
+  const inGroup = (x: Item) => !x.parent || ids.includes(x.parent) || items.find((p) => p.id === x.parent)?.kind === "group";
+  const members = picked.filter(inGroup);
+  if (!members.length) return { items };
+  const outer = members.map((x) => (x.parent && !ids.includes(x.parent) ? x.parent : "")).filter((p, i, a) => a.indexOf(p) === i);
+  const parent = outer.length === 1 && outer[0] ? outer[0] : undefined;
+  const st = members.map((x) => evalItem(items, { ...x, parent: undefined }, t));
+  const x0 = Math.min(...st.map((s) => s.x)), y0 = Math.min(...st.map((s) => s.y));
+  const x1 = Math.max(...st.map((s) => s.x + s.w)), y1 = Math.max(...st.map((s) => s.y + s.h));
+  const id = uid("g");
+  const g: Item = { id, kind: "group", label: tx("Group"), t0: r2(Math.min(...members.map((x) => x.t0))), t1: r2(Math.max(...members.map((x) => x.t1))), x: Math.round(x0), y: Math.round(y0), w: Math.round(x1 - x0), h: Math.round(y1 - y0), parent, opacity: 1, fade: 0 };
+  const first = items.findIndex((x) => members.includes(x));
+  const out = items.map((x) => (members.includes(x) && (!x.parent || !ids.includes(x.parent)) ? { ...x, parent: id } : x));
+  out.splice(first, 0, g);
+  return { items: out, id };
+}
+/** Take the layers out of a group (they keep their place) and drop the group. */
+export function ungroup(items: Item[], id: string): { items: Item[]; ids: string[] } {
+  const g = items.find((x) => x.id === id);
+  if (!g || g.kind !== "group") return { items, ids: [] };
+  const kids = items.filter((x) => x.parent === id).map((x) => x.id);
+  return { items: items.filter((x) => x.id !== id).map((x) => (x.parent === id ? { ...x, parent: g.parent } : x)), ids: kids };
+}
+/** The outermost group a layer is in (or the layer itself). */
+export function topOf(items: Item[], it: Item): Item {
+  return groupsOf(items, it)[0] || it;
+}
 
 // ---------- clipboard (in this window, and across films through local storage) ----------
 const CLIP = "linnea.clip2d";
-export function copyItems(items: Item[]) {
+export function copyItems(items: Item[], all?: Item[]) {
+  if (all) items = all.filter((x) => withInside(all, items.map((y) => y.id)).includes(x.id));
   try { localStorage.setItem(CLIP, JSON.stringify(items)); } catch { /* private window */ }
 }
 export function pasteItems(t: number): Item[] {
@@ -298,7 +351,7 @@ export function hasClip(): boolean {
   try { return (localStorage.getItem(CLIP) || "[]").length > 2; } catch { return false; }
 }
 const STYLE = "linnea.style2d";
-const STYLE_KEYS = ["font", "size", "weight", "italic", "align", "spacing", "lineHeight", "upper", "color", "stroke", "strokeWidth", "bg", "bg2", "gradAngle", "radius", "border", "borderWidth", "shadow", "shadowBlur", "shadowX", "shadowY", "blend", "blur", "anim", "animOut", "fade", "typing", "reveal"];
+const STYLE_KEYS = ["fx", "fy", "fit", "font", "size", "weight", "italic", "align", "spacing", "lineHeight", "upper", "color", "stroke", "strokeWidth", "bg", "bg2", "gradAngle", "radius", "border", "borderWidth", "shadow", "shadowBlur", "shadowX", "shadowY", "blend", "blur", "anim", "animOut", "fade", "typing", "reveal"];
 export function copyStyle(it: Item) {
   const s: Json = {};
   for (const k of STYLE_KEYS) s[k] = it[k];

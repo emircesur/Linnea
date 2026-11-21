@@ -5,18 +5,21 @@ import { tx } from "./i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight, Bookmark, Circle, CircleDot, Diamond, Eye, EyeOff, Gauge, GripVertical, Hash, Image as ImageIcon, Keyboard, Link2, Lock, PenLine, Plus, Rows3, Search,
-  Smartphone, Sparkles, Square, Subtitles, Type, TypeOutline, Unlock, X, Blend, PanelBottom, MessageSquareText, Clapperboard,
+  Smartphone, Sparkles, Square, Subtitles, FolderClosed, Film, Music, ChevronRight, Type, TypeOutline, Unlock, X, Blend, PanelBottom, MessageSquareText, Clapperboard,
 } from "lucide-react";
 import { Json, tool } from "./api";
-import { DROP, evalItem, Item, Layers, newItem } from "./Layers";
+import { DROP, evalItem, Item, Layers, newItem, videoItem } from "./Layers";
 import { deletePreset, fromPreset, kindLabel, layerName, moveTo, myPresets, r2, uid } from "./LayerOps";
 import { LayerInspector, MultiInspector } from "./Inspector";
 import type { Elements, Reg } from "./Elements";
 import { PuppetInfo } from "./Puppets";
 import { PuppetPreview } from "./PuppetsPage";
+import { RigEditor } from "./RigEditor";
+import { puppetFromFrames } from "./Rig";
+import { Bone as BoneIcon, Images } from "lucide-react";
 
 export const KIND_ICON: Record<string, any> = {
-  text: Type, image: ImageIcon, rect: Square, ellipse: Circle, counter: Hash, marker: PenLine, arrow: ArrowUpRight, phone: Smartphone, lower: Rows3, progress: Gauge, puppet: Sparkles,
+  group: FolderClosed, video: Film, text: Type, image: ImageIcon, rect: Square, ellipse: Circle, counter: Hash, marker: PenLine, arrow: ArrowUpRight, phone: Smartphone, lower: Rows3, progress: Gauge, puppet: Sparkles,
 };
 
 type Tile = [string, string, any, string?];
@@ -25,7 +28,7 @@ const GROUPS: [string, Tile[]][] = [
     ["marker", tx("Handwriting"), PenLine], ["counter", tx("Counter"), Hash], ["lower", tx("Lower third"), Rows3]]],
   [tx("Shapes"), [["rect", tx("Box"), Square], ["ellipse", tx("Circle"), Circle], ["ring", tx("Ring"), CircleDot], ["arrow", tx("Arrow"), ArrowUpRight], ["progress", tx("Progress bar"), Gauge],
     ["gradient", tx("Gradient background"), Blend], ["scrim", tx("Shade for text"), PanelBottom]]],
-  [tx("Media"), [["image", tx("Picture…"), ImageIcon], ["phone", tx("Phone"), Smartphone]]],
+  [tx("Media"), [["video", tx("Video…"), Film], ["image", tx("Picture…"), ImageIcon], ["sound", tx("Sound…"), Music], ["phone", tx("Phone"), Smartphone]]],
 ];
 
 /** Where a new layer goes: centred on (x, y) when dropped, as made otherwise; t0 at the playhead. */
@@ -34,12 +37,27 @@ function placeAt(it: Item, x?: number, y?: number): Item {
   return { ...it, x: Math.round(x - it.w / 2), y: Math.round(y - it.h / 2) };
 }
 
-export function AddPanel({ L, t, W, H, dur, select, say, puppets }: { L: Layers; t: number; W: number; H: number; dur: number; select: (ids: string[]) => void; say: (s: string) => void; puppets?: any }) {
+export function AddPanel({ L, t, W, H, dur, select, say, puppets, addSound, scenes }: { L: Layers; t: number; W: number; H: number; dur: number; select: (ids: string[]) => void; say: (s: string) => void; puppets?: any; addSound?: (path: string, at: number) => void; scenes?: any }) {
   const [mine, setMine] = useState(myPresets);
   const st = useRef({ L, t });
   st.current = { L, t };
   const add = async (kind: string, x?: number, y?: number) => {
     const { L, t } = st.current;
+    if (kind === "sound") {
+      const r = await tool("pick_file");
+      if (r.path) addSound?.(r.path, t);
+      return;
+    }
+    if (kind === "video") {
+      const r = await tool("pick_file");
+      if (!r.path) return;
+      const src = await L.addImage(r.path);
+      let v = await videoItem(src, String(r.path).split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") || tx("Video"), t, dur, W, H, L.url.replace(/[^/]*$/, ""));
+      v = placeAt(v, x, y);
+      st.current.L.update([...st.current.L.items, v]);
+      select([v.id]);
+      return;
+    }
     let it = newItem(kind, t, dur, W, H);
     if (kind === "image") {
       const r = await tool("pick_file");
@@ -97,6 +115,7 @@ export function AddPanel({ L, t, W, H, dur, select, say, puppets }: { L: Layers;
           </div>
         </div>
       )}
+      {scenes}
       {puppets && puppets(puppetDrop)}
     </div>
   );
@@ -116,7 +135,21 @@ export function LayerStack({ L, t, sel, multi, select, seek, reg, E, selEl, pick
   const [codeOpen, setCodeOpen] = useState(true);
   const items = L.items;
   const match = (s: string) => !q || s.toLowerCase().includes(q.toLowerCase());
-  const rows = items.map((it, i) => ({ it, i })).reverse().filter(({ it }) => match(layerName(it) + " " + it.kind) && (!now || (t >= it.t0 && t < it.t1)));
+  const [shut, setShut] = useState<Record<string, boolean>>({});
+  const isGroup = (id?: string) => !!id && items.find((x) => x.id === id)?.kind === "group";
+  // top first; what is in a group comes under it, indented, unless searching
+  const rows: { it: Item; i: number; depth: number }[] = [];
+  const walk = (parent: string | undefined, depth: number) => {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      const inG = isGroup(it.parent);
+      if (depth === 0 ? inG : it.parent !== parent) continue;
+      rows.push({ it, i, depth });
+      if (it.kind === "group" && !shut[it.id] && depth < 6) walk(it.id, depth + 1);
+    }
+  };
+  if (q || now) items.forEach((it, i) => { if (match(layerName(it) + " " + it.kind) && (!now || (t >= it.t0 && t < it.t1))) rows.unshift({ it, i, depth: 0 }); });
+  else walk(undefined, 0);
   const code = (reg || []).filter((r) => { const e = E?.edits[r.id] || {}; const t0 = e.t0 ?? r.t0, t1 = e.t1 ?? r.t1; return match((e.text ?? r.label) + " " + r.kind) && (!now || (t >= t0 && t < t1)); });
   const chosen = multi.length ? multi : sel ? [sel] : [];
   const click = (e: React.MouseEvent, it: Item) => {
@@ -141,7 +174,7 @@ export function LayerStack({ L, t, sel, multi, select, seek, reg, E, selEl, pick
       </div>
       <div className="stack-list">
         <div className="stack-g">{tx("Your layers")} <span className="muted">{items.length}</span></div>
-        {rows.map(({ it, i }) => {
+        {rows.map(({ it, i, depth }) => {
           const I = KIND_ICON[it.kind] || Square;
           const live = t >= it.t0 && t < it.t1;
           const on = chosen.includes(it.id);
@@ -149,9 +182,21 @@ export function LayerStack({ L, t, sel, multi, select, seek, reg, E, selEl, pick
             <div key={it.id} className={`lrow ${on ? "on" : ""} ${it.id === sel ? "prim" : ""} ${over === i ? "over" : ""}`} style={{ opacity: it.hidden ? 0.5 : 1 }}
               draggable={!renaming} onDragStart={(e) => { setDragId(it.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", it.id); }}
               onDragOver={(e) => { if (dragId) { e.preventDefault(); setOver(i); } }} onDragLeave={() => setOver(null)}
-              onDrop={(e) => { e.preventDefault(); if (dragId && dragId !== it.id) L.update(moveTo(items, dragId, i)); setDragId(""); setOver(null); }} onDragEnd={() => { setDragId(""); setOver(null); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragId && dragId !== it.id) {
+                  // dropped among a group's layers it joins the group; dropped outside every group it leaves its own
+                  const moved = moveTo(items, dragId, i);
+                  const into = isGroup(it.parent) ? it.parent : undefined;
+                  const d = moved.find((x) => x.id === dragId)!;
+                  L.update(into !== d.parent && (into || isGroup(d.parent)) && dragId !== into ? moved.map((x) => (x.id === dragId ? { ...x, parent: into } : x)) : moved);
+                }
+                setDragId(""); setOver(null);
+              }} onDragEnd={() => { setDragId(""); setOver(null); }}
               onClick={(e) => click(e, it)} onDoubleClick={() => setRenaming(it.id)} onContextMenu={(e) => { if (!onMenu) return; e.preventDefault(); if (!on) select([it.id], it.id); onMenu(e.clientX, e.clientY, it.id); }}>
               <GripVertical className="grip" />
+              {depth > 0 && <span style={{ width: depth * 14, flex: "none" }} />}
+              {it.kind === "group" ? <button className="lrow-b keep" style={{ width: 16 }} onClick={(e) => { e.stopPropagation(); setShut({ ...shut, [it.id]: !shut[it.id] }); }}><ChevronRight style={{ transform: shut[it.id] ? undefined : "rotate(90deg)" }} /></button> : null}
               <I className="kind" />
               {renaming === it.id
                 ? <input autoFocus className="lrow-name" defaultValue={layerName(it)} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter" || e.key === "Escape") (e.target as HTMLInputElement).blur(); }} onBlur={(e) => { put(it.id, { label: e.target.value.trim() || undefined }); setRenaming(""); }} />
@@ -311,6 +356,7 @@ export function PuppetGrid({ film, L, t, W, H, dur, say, select, dropRef, makeFr
   const [own, setOwn] = useState<string[]>([]);
   const [q, setQ] = useState("");
   const [hover, setHover] = useState("");
+  const [rig, setRig] = useState(false);
   const load = () => {
     tool("puppet_list", { film }).then((r) => {
       setList(r.puppets || []);
@@ -344,8 +390,11 @@ export function PuppetGrid({ film, L, t, W, H, dur, say, select, dropRef, makeFr
   const shown = list.filter((p) => !q || JSON.stringify([p.name, p.label, p.desc, p.tags]).toLowerCase().includes(q.toLowerCase()));
   return (
     <div className="stack" style={{ gap: 6 }}>
+      {rig && <RigEditor taken={list.map((p) => p.name)} close={() => setRig(false)} say={say} saved={(n) => { setRig(false); load(); setTimeout(() => add(n), 600); }} />}
       <div className="rowx">
         <span className="sub-h grow">{tx("Puppets")}</span>
+        <button className="btn icon sm ghost" title={tx("Build a puppet from bones and pose it")} onClick={() => setRig(true)}><BoneIcon /></button>
+        <label className="btn icon sm ghost" title={tx("Pick several pictures: they play in turn, like a flip book")}><Images /><input type="file" accept="image/*" multiple hidden onChange={(e) => { const fs = [...(e.target.files || [])]; e.target.value = ""; if (fs.length) puppetFromFrames(fs, list.map((p) => p.name)).then((n) => { say(tx("\"{0}\" saved to the library", n)); load(); }).catch((er) => say(er.message)); }} /></label>
         <label className="btn sm ghost" title={tx("Make a puppet from a picture")}><ImageIcon />{tx("From a picture")}<input type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) makeFromImage(f, list.map((p) => p.name)).then((n) => { say(tx("\"{0}\" saved to the library", n)); load(); }).catch((er) => say(er.message)); }} /></label>
       </div>
       {own.length > 0 && (

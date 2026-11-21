@@ -150,7 +150,15 @@ in) and `animOut` (way out): none|fade|slide-up|slide-down|slide-left|slide-righ
 seconds; `shadow` (colour) + `shadowBlur/X/Y`, `blur`, `blend` (canvas composite: multiply, screen, overlay…), `fx`/`fy`,
 `border` + `borderWidth`, `bg2` + `gradAngle` (gradient fill). Text: `font, size, weight, italic, align, spacing,
 lineHeight, upper, stroke, strokeWidth, typing: 'chars'|'words'` (typed out over `reveal` s). Image: `fit:
-cover|contain`, `radius`. `label` names a layer, `locked` keeps it from being dragged in the app. Reel layer times are EDIT seconds; the user drags
+cover|contain`, `radius`. `label` names a layer, `locked` keeps it from being dragged in the app.
+Keys also animate style numbers (size, blur, shadowBlur, shadowX, shadowY, strokeWidth, borderWidth, radius, spacing,
+value, gradAngle, lineHeight) and colours (color, bg, bg2, stroke, shadow, border, accent, subColor); a key's `ease`
+(linear|in|out|inOut|back|sine|expo|elastic|bounce|hold) or its own `bez: [x1, y1, x2, y2]` shapes the way into it.
+Video: `{kind: 'video', src (hub_2d add_image copies the file into vh2d/), in (s into the file), speed, loop, fit,
+sound: true, gain}`; renders show the exact frame, and the app keeps a linked sound clip (hub_sound clip `link`, with
+`from`, `len`, `speed`) in the mix. Group: `{kind: 'group', x, y, w, h, t0, t1}`; layers whose `parent` is the group
+move, turn, scale and fade with it and hide with it. Puppets can also be built from bones (the app's puppet editor:
+`rig` on the puppet, draw generated) or from frames (a flip book); both are ordinary rich puppets. Reel layer times are EDIT seconds; the user drags
 and edits them in the editor. Any custom animation can go into the reel's layer page film.js (the folder
 `reel_layers` returns), drawn transparent over the reel.
 

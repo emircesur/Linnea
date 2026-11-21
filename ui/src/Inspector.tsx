@@ -5,15 +5,17 @@ import { tx } from "./i18n";
 import { useRef, useState } from "react";
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical,
-  AlignVerticalSpaceAround, ChevronDown, ChevronLeft, ChevronRight, Copy, Diamond, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Lock, Maximize, Trash2, Unlock, Wand2, Bookmark,
+  AlignVerticalSpaceAround, Group, ChevronDown, ChevronLeft, ChevronRight, Copy, Diamond, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Lock, Maximize, Trash2, Unlock, Wand2, Bookmark,
 } from "lucide-react";
 import { Json, tool } from "./api";
 import { evalItem, Item, Layers } from "./Layers";
 import {
   align, ANIMS, animated, BLENDS, copyStyle, distribute, duplicate, EASES, FONTS, keyAll, keyAt, keyTimes, kindLabel, layerName, LOOKS, motion, MOTIONS, moveKeyTime,
-  paramsAt, pasteStyle, PROPS, r2, remove, replace, savePreset, setParam, setProp, toggleKey, toggleParamKey,
+  paramsAt, pasteStyle, PROPS, r2, remove, replace, savePreset, setParam, setProp, toggleKey, toggleParamKey, ungroup, group,
 } from "./LayerOps";
 import { PuppetFields, PuppetInfo } from "./Puppets";
+import { COLORS, hexOf, STYLE_NUM, styled } from "./Motion";
+import { CurveEditor, CurveIcon, curveName } from "./Curve";
 
 // ---------- small fields ----------
 export function NumField({ label, value, onChange, onLive, step = 1, min, max, title, keyState, onKey, wide }: {
@@ -68,14 +70,15 @@ export function NumField({ label, value, onChange, onLive, step = 1, min, max, t
   );
 }
 
-export function ColorField({ label, value, onChange, fallback = "#ffffff" }: { label: string; value?: string; onChange: (v: string | undefined) => void; fallback?: string }) {
-  const hex = /^#[0-9a-f]{6}$/i.test(value || "") ? value! : /^#[0-9a-f]{3}$/i.test(value || "") ? "#" + value!.slice(1).split("").map((c) => c + c).join("") : fallback;
+export function ColorField({ label, value, onChange, fallback = "#ffffff", keyState, onKey }: { label: string; value?: string; onChange: (v: string | undefined) => void; fallback?: string; keyState?: "" | "anim" | "on"; onKey?: () => void }) {
+  const hex = hexOf(value) || fallback;
   return (
     <div className="nf wide cf">
       <span className="nf-l">{label}</span>
       <input type="color" value={hex} onChange={(e) => onChange(e.target.value)} />
       <input className="num" key={value} defaultValue={value || ""} placeholder={tx("none")} onBlur={(e) => e.target.value !== (value || "") && onChange(e.target.value || undefined)} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} />
-      {value && <button className="nf-k" title={tx("None")} onClick={() => onChange(undefined)}><Trash2 /></button>}
+      {value && !keyState && <button className="nf-k" title={tx("None")} onClick={() => onChange(undefined)}><Trash2 /></button>}
+      {onKey && <button className={`nf-k ${keyState}`} title={keyState === "on" ? tx("Remove the key at this second") : tx("Key this colour at this second: it changes smoothly between keys")} onClick={onKey}><Diamond /></button>}
     </div>
   );
 }
@@ -117,6 +120,7 @@ export function LayerInspector({ L, id, t, W, H, dur, seek, pathFor, setPathFor,
   const items = L.items;
   const it = items.find((x) => x.id === id);
   const [motionPick, setMotionPick] = useState("rise");
+  const [curveAt, setCurveAt] = useState(-1);
   const picRef = useRef<HTMLInputElement>(null);
   if (!it) return null;
   const put = (f: (x: Item) => Item) => L.update(items.map((x) => (x.id === id ? f(x) : x)));
@@ -131,10 +135,17 @@ export function LayerInspector({ L, id, t, W, H, dur, seek, pathFor, setPathFor,
       onLive={(v) => L.preview(items.map((x) => (x.id === id ? setProp(items, x, t, p, v) : x)))}
       onChange={(v) => v !== undefined && put((x) => setProp(items, x, t, p, v))} />;
   };
-  const num = (k: string, label: string, step = 1, extra: Json = {}) => (
-    <NumField key={k} label={label} value={it[k]} step={step} {...extra} onLive={(v) => L.preview(items.map((x) => (x.id === id ? { ...x, [k]: v } : x)))} onChange={(v) => set({ [k]: v })} />
-  );
-  const col = (k: string, label: string, fb?: string) => <ColorField key={k} label={label} value={it[k]} fallback={fb} onChange={(v) => set({ [k]: v })} />;
+  // style numbers and colours can be keyed too: a diamond each, and typing keys them once they are animated
+  const look = styled(it, t);
+  const ksOf = (k: string): "" | "anim" | "on" => { const kk = keyAt(it, t) as Json | undefined; return kk && kk[k] !== undefined ? "on" : animated(it, k) ? "anim" : ""; };
+  const num = (k: string, label: string, step = 1, extra: Json = {}) => {
+    const keyable = STYLE_NUM.includes(k);
+    return <NumField key={k} label={label} value={(keyable ? look[k] : it[k]) ?? extra.dflt} step={step} {...extra} onLive={(v) => L.preview(items.map((x) => (x.id === id ? setProp(items, x, t, k, v) : x)))} onChange={(v) => put((x) => setProp(items, x, t, k, v))}
+      {...(keyable ? { keyState: ksOf(k), onKey: () => put((x) => toggleKey(items, x, t, k, extra.fallback ?? 0)) } : {})} />;
+  };
+  const col = (k: string, label: string, fb?: string) => <ColorField key={k} label={label} value={COLORS.includes(k) ? look[k] : it[k]} fallback={fb} onChange={(v) => put((x) => setProp(items, x, t, k, v))}
+    {...(COLORS.includes(k) ? { keyState: ksOf(k), onKey: () => put((x) => toggleKey(items, x, t, k, fb)) } : {})} />;
+  const [curveFor, setCurveFor] = [curveAt, setCurveAt];
   const str = (k: string, label: string) => (
     <div className="nf wide" key={k}><span className="nf-l">{label}</span><input key={`${id}${k}`} defaultValue={it[k] ?? ""} onChange={(e) => set({ [k]: e.target.value })} /></div>
   );
@@ -160,6 +171,35 @@ export function LayerInspector({ L, id, t, W, H, dur, seek, pathFor, setPathFor,
       </div>
       {!on && <div className="hint warn">{tx("Not on screen at this second.")} <button className="linkish" onClick={() => seek?.(it.t0 + 0.05)}>{tx("Go to its start")}</button></div>}
 
+      {/* ---- a group: what is in it ---- */}
+      {it.kind === "group" && (
+        <Section name="group" title={tx("In this group")}>
+          {items.filter((x) => x.parent === id).map((x) => <button key={x.id} className="lrow" style={{ width: "100%" }} onClick={() => select?.([x.id])}><span className="lrow-name">{layerName(x)}</span><span className="lrow-t num">{kindLabel(x.kind)}</span></button>)}
+          <span className="muted" style={{ fontSize: 12, lineHeight: "18px" }}>{tx("Moving, turning, scaling or fading the group does it to everything in it; its time range and its eye hide them too. Click a layer in it on the frame a second time to change that layer alone.")}</span>
+          <button className="btn sm" onClick={() => { const r = ungroup(items, id); L.update(r.items); select?.(r.ids); }}>{tx("Ungroup (Ctrl+Shift+G)")}</button>
+        </Section>
+      )}
+      {/* ---- a video ---- */}
+      {it.kind === "video" && (
+        <Section name="video" title={tx("Video")} right={it.fileDur ? <span className="muted num" style={{ fontSize: 11 }}>{tx("file {0} s", it.fileDur)}</span> : null}>
+          <div className="rowx">
+            <button className="btn sm grow" onClick={async () => { const r = await tool("pick_file"); if (r.path) set({ src: await L.addImage(r.path) }); }}>{tx("Replace video…")}</button>
+          </div>
+          <div className="g2">
+            {num("in", tx("From s"), 0.1, { min: 0, dflt: 0, title: tx("Where in the file the layer starts") })}
+            {num("speed", tx("Speed ×"), 0.05, { min: 0.1, max: 4, dflt: 1 })}
+          </div>
+          <SelectField label={tx("Fit")} value={it.fit || "fill"} options={[["fill", tx("Stretch")], ["cover", tx("Fill (crop)")], ["contain", tx("Fit inside")]]} onChange={(v) => set({ fit: v === "fill" ? undefined : v })} />
+          <div className="rowx" style={{ gap: 12, flexWrap: "wrap" }}>
+            <label className="rowx" style={{ fontSize: 12, gap: 6 }}><input type="checkbox" checked={!!it.loop} onChange={(e) => set({ loop: e.target.checked || undefined })} />{tx("Loop")}</label>
+            <label className="rowx" style={{ fontSize: 12, gap: 6 }}><input type="checkbox" checked={it.sound !== false} onChange={(e) => set({ sound: e.target.checked })} />{tx("Its sound in the film")}</label>
+          </div>
+          {it.sound !== false && num("gain", tx("Volume dB"), 1, { min: -60, max: 20, wide: true, dflt: 0 })}
+          {it.fileDur ? <button className="btn sm ghost" onClick={() => set({ t1: r2(Math.min(dur, it.t0 + Math.max(0.1, (it.fileDur - (it.in || 0)) / (it.speed || 1)))) })}>{tx("Length to the end of the video")}</button> : null}
+          <span className="muted" style={{ fontSize: 11, lineHeight: "16px" }}>{tx("Renders show the exact frame of the video at every frame of the film. Its sound is a linked clip in the Sound tab and follows the layer.")}</span>
+        </Section>
+      )}
+
       {/* ---- content ---- */}
       {(textual || ["phone", "progress", "image", "puppet"].includes(it.kind)) && (
         <Section name="content" title={tx("Content")}>
@@ -184,7 +224,7 @@ export function LayerInspector({ L, id, t, W, H, dur, seek, pathFor, setPathFor,
                 keyed={(k2) => { const pk = (it.pkeys || []).find((q: Json) => Math.abs(q.t - t) <= 0.02); return pk?.p?.[k2] !== undefined ? "on" : (it.pkeys || []).some((q: Json) => q.p?.[k2] !== undefined) ? "anim" : ""; }}
                 onKey={(k2) => put((x) => toggleParamKey(x, t, k2, paramsAt(x, t)[k2] ?? info?.params?.[k2]?.default))} />
               <div className="g2">
-                {num("speed", tx("Speed ×"), 0.05, { min: 0.05, max: 8 })}
+                {num("speed", tx("Speed ×"), 0.05, { min: 0.05, max: 8, dflt: 1 })}
                 <div className="rowx" style={{ gap: 2 }}>
                   <IconBtn title={tx("Mirror left–right")} on={!!it.fx} onClick={() => set({ fx: !it.fx || undefined })}><FlipHorizontal2 /></IconBtn>
                   <IconBtn title={tx("Mirror up–down")} on={!!it.fy} onClick={() => set({ fy: !it.fy || undefined })}><FlipVertical2 /></IconBtn>
@@ -227,7 +267,7 @@ export function LayerInspector({ L, id, t, W, H, dur, seek, pathFor, setPathFor,
         {Array.isArray(it.path) && it.path.length >= 2 && <div className="hint">{tx("It follows a motion path, so X and Y come from the path.")}</div>}
         <div className="g2">
           {prop("x", "X")}{prop("y", "Y")}
-          {prop("w", "W", 1, { min: 1 })}{prop("h", "H", 1, { min: 1 })}
+          {it.kind !== "group" && prop("w", "W", 1, { min: 1 })}{it.kind !== "group" && prop("h", "H", 1, { min: 1 })}
           {prop("rot", tx("Angle"), 1)}{prop("scale", tx("Scale"), 0.01, { min: 0 })}
           {prop("opacity", tx("Opacity"), 0.01, { min: 0, max: 1 })}
           <div className="rowx" style={{ gap: 2, justifyContent: "flex-end" }}>
@@ -287,14 +327,14 @@ export function LayerInspector({ L, id, t, W, H, dur, seek, pathFor, setPathFor,
       )}
 
       {/* ---- effects ---- */}
-      <Section name="effects" title={tx("Effects")} open={false}>
+      {it.kind !== "group" && <Section name="effects" title={tx("Effects")} open={false}>
         <div className="g2">{col("shadow", tx("Shadow"), "#000000")}{it.shadow ? num("shadowBlur", tx("Softness"), 1, { min: 0 }) : <span />}</div>
         {it.shadow && <div className="g2">{num("shadowX", tx("Shadow X"))}{num("shadowY", tx("Shadow Y"))}</div>}
         <div className="g2">
           {num("blur", tx("Blur px"), 0.5, { min: 0 })}
           <SelectField label={tx("Blend")} value={it.blend || "normal"} options={BLENDS} onChange={(v) => set({ blend: v === "normal" ? undefined : v })} />
         </div>
-      </Section>
+      </Section>}
 
       {/* ---- animation ---- */}
       <Section name="animate" title={tx("Animation")} right={times.length ? <span className="muted num" style={{ fontSize: 11 }}>{tx("{0} keys", times.length)}</span> : null}>
@@ -306,10 +346,13 @@ export function LayerInspector({ L, id, t, W, H, dur, seek, pathFor, setPathFor,
         {(it.keys || []).map((k2, i) => (
           <div key={i} className={`keyrow ${Math.abs(k2.t - t) <= 0.02 ? "on" : ""}`}>
             <button className="linkish num" style={{ width: 52 }} onClick={() => seek?.(k2.t)}>{k2.t} {tx("s")}</button>
-            <span className="muted num grow" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{PROPS.filter((p) => (k2 as Json)[p] !== undefined).map((p) => `${p} ${(k2 as Json)[p]}`).join(" · ")}</span>
-            <select className="select" style={{ width: 76, height: 24, fontSize: 11, padding: "0 4px" }} value={k2.ease || "inOut"} onChange={(e) => set({ keys: it.keys!.map((x, j) => (j === i ? { ...x, ease: e.target.value } : x)) })}>
-              {EASES.map((e) => <option key={e}>{e}</option>)}
-            </select>
+            <span className="muted num grow" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={Object.keys(k2).filter((p) => !["t", "ease", "bez"].includes(p)).join(", ")}>{Object.keys(k2).filter((p) => !["t", "ease", "bez"].includes(p)).map((p) => (typeof (k2 as Json)[p] === "number" ? `${p} ${(k2 as Json)[p]}` : p)).join(" · ")}</span>
+            <span style={{ position: "relative" }}>
+              <button className="btn sm ghost curve-btn" title={tx("The curve into this key")} onClick={() => setCurveFor(curveFor === i ? -1 : i)}><CurveIcon k={k2} />{curveName(k2)}</button>
+              {curveFor === i && <CurveEditor value={k2} close={() => setCurveFor(-1)}
+                onChange={(c) => set({ keys: it.keys!.map((x, j) => (j === i ? { ...x, ease: c.ease, bez: c.bez } : x)) })}
+                onAll={() => { set({ keys: it.keys!.map((x) => ({ ...x, ease: k2.ease, bez: k2.bez })) }); setCurveFor(-1); }} />}
+            </span>
             <button className="btn icon sm ghost" title={tx("Move this key to the playhead")} onClick={() => put((x) => moveKeyTime(x, k2.t, t))}><ChevronDown style={{ transform: "rotate(-90deg)" }} /></button>
             <button className="btn icon sm ghost" onClick={() => set({ keys: it.keys!.filter((_, j) => j !== i).length ? it.keys!.filter((_, j) => j !== i) : undefined })}><Trash2 /></button>
           </div>
@@ -364,6 +407,7 @@ export function MultiInspector({ L, ids, t, W, H, dur, select }: { L: Layers; id
         <IconBtn title={tx("Duplicate (Ctrl+D)")} onClick={() => { const r = duplicate(items, ids); L.update(r.items); select(r.ids); }}><Copy /></IconBtn>
         <IconBtn title={tx("Delete (Delete)")} onClick={() => { L.update(remove(items, ids)); select([]); }}><Trash2 /></IconBtn>
       </div>
+      <button className="btn sm primary" onClick={() => { const r = group(items, ids, t); if (r.id) { L.update(r.items); select([r.id]); } }}><Group />{tx("Group them (Ctrl+G)")}</button>
       <Section name="m-align" title={tx("Arrange")}>
         <AlignRow onAlign={(how) => L.update(align(items, ids, how, W, H, t))} />
         <div className="rowx" style={{ gap: 4 }}>
