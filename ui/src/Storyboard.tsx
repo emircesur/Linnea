@@ -74,7 +74,7 @@ const KEYS: [string, [string, string][]][] = [
     ["Ctrl + K", "Every command, by name"], ["Ctrl + Z / Ctrl + Y", "Undo / redo"], ["Shift + click", "Select several"], ["Ctrl + A", "Select every layer on screen"],
     ["← → ↑ ↓", "Nudge 1 px (Shift: 10 px)"], ["Ctrl + D", "Duplicate"], ["Ctrl + C / X / V", "Copy / cut / paste (also between films)"], ["Delete", "Delete"],
     ["S", "Split at the playhead"], ["Alt + [ / ]", "Start / end at the playhead"], ["Ctrl + [ / ]", "Send backward / bring forward (Shift: to the back / front)"],
-    ["H", "Hide / show"], ["Ctrl + L", "Lock / unlock"], ["Shift (drag)", "Keep the shape, one axis, 15° steps"], ["Alt (drag)", "From the centre; no snapping"], ["Ctrl + wheel", "Zoom the timeline"], ["Esc", "Deselect, back to the live view"],
+    ["H", "Hide / show"], ["Ctrl + L", "Lock / unlock"], ["Shift (drag)", "Keep the shape, one axis, 15° steps"], ["Alt (drag)", "From the centre; no snapping"], ["Ctrl + wheel", "Zoom the timeline"], ["Ctrl + \\", "Hide / show both side panels"], ["Ctrl + Shift + \\", "Hide / show the timeline"], ["Esc", "Deselect, back to the live view"],
   ]],
 ];
 

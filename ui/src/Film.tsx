@@ -13,6 +13,7 @@ import { LayerInspector, MultiInspector } from "./Inspector";
 import { copyItems, copyStyle, duplicate, group, hasClip, keyTimes, layerName, moveKeyTime, pasteItems, pasteStyle, r2 as rr2, remove, reorder, replace, split, trim, ungroup, withInside } from "./LayerOps";
 import { DROP } from "./Layers";
 import { Command as CmdIcon, Grid3x3, Magnet, Scissors, ZoomIn, ZoomOut, MousePointerClick } from "lucide-react";
+import { Bot, ChevronDown, ChevronUp, History, Languages as LanguagesIcon, Layers as LayersIcon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SlidersHorizontal, StickyNote, Volume2 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Lane, LANE_H, laneRows, TrackLane } from "./Tracks";
 import { PuppetFields, puppetFromImage } from "./Puppets";
@@ -173,8 +174,14 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
     }
   }, []);
   const [side, setSide] = useState<"props" | "sound" | "langs" | "ai" | "versions">("props");
+  const showSide = (k: "props" | "sound" | "langs" | "ai" | "versions") => { setSide(k); setPane((p) => (p.r ? p : { ...p, r: true })); };
   const [left, setLeft] = useState<"layers" | "add" | "notes">(() => { try { return (localStorage.getItem("linnea.left") as any) || "layers"; } catch { return "layers"; } });
   useEffect(() => { try { localStorage.setItem("linnea.left", left); } catch { /* private window */ } }, [left]);
+  // the side panels and the timeline open and close; a closed side panel leaves a strip of its tabs' icons
+  const [pane, setPane] = useState<{ l: boolean; r: boolean; tl: boolean }>(() => { try { return { l: true, r: true, tl: true, ...JSON.parse(localStorage.getItem("linnea.panes") || "{}") }; } catch { return { l: true, r: true, tl: true }; } });
+  useEffect(() => { try { localStorage.setItem("linnea.panes", JSON.stringify(pane)); } catch { /* private window */ } }, [pane]);
+  const flip = (k: "l" | "r" | "tl") => setPane((p) => ({ ...p, [k]: !p[k] }));
+  const showLeft = (k: "layers" | "add" | "notes") => { setLeft(k); setPane((p) => (p.l ? p : { ...p, l: true })); };
   const [multi, setMulti] = useState<string[]>([]);
   const [zoom, setZoom] = useState(0);
   const [viewScale, setViewScale] = useState(0.3);
@@ -397,6 +404,12 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
         if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); ke.E.set(ke.selEl, { hidden: true }); return; }
         if (e.key === "Escape") { e.preventDefault(); setSelEl(""); return; }
       }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "\\" || e.code === "Backslash")) {
+        // Ctrl+\ : both side panels away (or back); with Shift the timeline
+        e.preventDefault();
+        if (e.shiftKey) flip("tl"); else setPane((p) => { const open = !(p.l || p.r); return { ...p, l: open, r: open }; });
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && ["0", "1", "2", "=", "+", "-"].includes(e.key)) {
         e.preventDefault();
         setZoom((z) => (e.key === "0" ? 0 : e.key === "1" ? 1 : e.key === "2" ? 2 : Math.max(0.05, Math.min(8, (z || vsRef.current) * (e.key === "-" ? 1 / 1.25 : 1.25)))));
@@ -427,8 +440,8 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       else if (e.code === "PageUp") { e.preventDefault(); const p = sc.filter((x: number) => x < tRef.current - 0.25).pop(); seek(p ?? 0); }
       else if (e.key === "?") setKeysOpen((o) => !o);
       else if (e.key === "b" || e.key === "B") setBoard((b) => !b);
-      else if (/^[1-5]$/.test(e.key)) setSide((["props", "sound", "langs", "ai", "versions"] as const)[+e.key - 1]);
-      else if (e.key === "a" || e.key === "A") { setLeft("add"); setPlaying(false); }
+      else if (/^[1-5]$/.test(e.key)) showSide((["props", "sound", "langs", "ai", "versions"] as const)[+e.key - 1]);
+      else if (e.key === "a" || e.key === "A") { showLeft("add"); setPlaying(false); }
       else if (e.key === "g" || e.key === "G") setGuides((g) => (g === "" ? "safe" : g === "safe" ? "thirds" : ""));
       else if (e.key === "k" || e.key === "K") setPlaying((p) => !p);
       else if (e.key === "j" || e.key === "J") seek(tRef.current - 1);
@@ -531,7 +544,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       { label: n > 1 ? tx("Delete {0} layers", n) : tx("Delete"), keys: "Del", danger: true, run: () => { L.update(remove(items2d, ids)); select([]); } },
     ];
   };
-  const go = (k: typeof side) => setSide(k);
+  const go = (k: typeof side) => showSide(k);
   const commands: Command[] = [
     { id: "play", group: tx("Play"), label: tx("Play / pause"), keys: "Space", run: () => setPlaying((p) => !p) },
     { id: "start", group: tx("Play"), label: tx("Go to the start"), keys: "Home", run: () => seek(0) },
@@ -543,21 +556,25 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
     { id: "redo", group: lang === "tr" ? "Düzen" : "Edit", label: tx("Redo"), keys: "Ctrl+Y", run: redo, when: () => hist.current.future.length > 0 },
     { id: "selall", group: lang === "tr" ? "Düzen" : "Edit", label: tx("Select every layer on screen"), keys: "Ctrl+A", run: () => select(items2d.filter((x) => tRef.current >= x.t0 && tRef.current < x.t1 && !x.locked).map((x) => x.id)) },
     ...layerOps(chosen).filter((m): m is Exclude<MenuItem, "-"> => m !== "-" && !m.disabled).map((m, i) => ({ id: "op" + i, group: tx("Layer"), label: m.label, keys: m.keys, run: m.run, when: () => chosen.length > 0 || m.label === tx("Paste") })),
-    ...["text", "subtitle", "caption", "typing", "lower", "counter", "marker", "rect", "ellipse", "arrow", "progress", "gradient", "scrim", "image", "phone"].map((k) => ({ id: "add" + k, group: tx("Add"), label: tx("Add: {0}", ({ text: tx("Title"), subtitle: tx("Subtitle"), caption: tx("Caption box"), typing: tx("Typewriter"), lower: tx("Lower third"), counter: tx("Counter"), marker: tx("Handwriting"), rect: tx("Box"), ellipse: tx("Circle"), arrow: tx("Arrow"), progress: tx("Progress bar"), gradient: tx("Gradient background"), scrim: tx("Shade for text"), image: tx("Picture…"), phone: tx("Phone") } as Json)[k]), run: () => { setLeft("add"); setTimeout(() => (document.querySelector(`[data-add="${k}"]`) as HTMLElement | null)?.click(), 30); } })),
+    ...["text", "subtitle", "caption", "typing", "lower", "counter", "marker", "rect", "ellipse", "arrow", "progress", "gradient", "scrim", "image", "phone"].map((k) => ({ id: "add" + k, group: tx("Add"), label: tx("Add: {0}", ({ text: tx("Title"), subtitle: tx("Subtitle"), caption: tx("Caption box"), typing: tx("Typewriter"), lower: tx("Lower third"), counter: tx("Counter"), marker: tx("Handwriting"), rect: tx("Box"), ellipse: tx("Circle"), arrow: tx("Arrow"), progress: tx("Progress bar"), gradient: tx("Gradient background"), scrim: tx("Shade for text"), image: tx("Picture…"), phone: tx("Phone") } as Json)[k]), run: () => { showLeft("add"); setTimeout(() => (document.querySelector(`[data-add="${k}"]`) as HTMLElement | null)?.click(), 30); } })),
     { id: "note", group: tx("Review"), label: tx("Leave a note on this frame"), keys: "N", run: () => { setPlaying(false); setMode("note"); } },
     { id: "frame", group: tx("Review"), label: range ? tx("Range to Claude") : tx("Frame to Claude"), run: sendFrame },
     { id: "guides", group: tx("View"), label: tx("Safe areas / thirds / none"), keys: "G", run: () => setGuides((g) => (g === "" ? "safe" : g === "safe" ? "thirds" : "")) },
     { id: "board", group: tx("View"), label: tx("Storyboard"), keys: "B", run: () => setBoard(!board) },
     { id: "snap", group: tx("View"), label: snapOn ? tx("Turn snapping off") : tx("Turn snapping on"), run: () => setSnapOn(!snapOn) },
     { id: "keys", group: tx("View"), label: tx("Keyboard shortcuts"), keys: "?", run: () => setKeysOpen(true) },
-    { id: "tl", group: tx("View"), label: tx("Panel: layers"), run: () => setLeft("layers") },
-    { id: "ta", group: tx("View"), label: tx("Panel: add"), keys: "A", run: () => setLeft("add") },
-    { id: "tn", group: tx("View"), label: tx("Panel: notes"), run: () => setLeft("notes") },
+    { id: "tl", group: tx("View"), label: tx("Panel: layers"), run: () => showLeft("layers") },
+    { id: "ta", group: tx("View"), label: tx("Panel: add"), keys: "A", run: () => showLeft("add") },
+    { id: "tn", group: tx("View"), label: tx("Panel: notes"), run: () => showLeft("notes") },
     { id: "tp", group: tx("View"), label: tx("Panel: properties"), keys: "1", run: () => go("props") },
     { id: "ts", group: tx("View"), label: tx("Panel: sound"), keys: "2", run: () => go("sound") },
     { id: "tg", group: tx("View"), label: tx("Panel: languages"), keys: "3", run: () => go("langs") },
     { id: "tai", group: tx("View"), label: tx("Panel: assistant"), keys: "4", run: () => go("ai") },
     { id: "tv", group: tx("View"), label: tx("Panel: versions"), keys: "5", run: () => go("versions") },
+    { id: "pl", group: tx("View"), label: pane.l ? tx("Hide the left panel") : tx("Show the left panel"), run: () => flip("l") },
+    { id: "pr", group: tx("View"), label: pane.r ? tx("Hide the right panel") : tx("Show the right panel"), run: () => flip("r") },
+    { id: "pb", group: tx("View"), label: tx("Hide / show both side panels"), keys: "Ctrl+\\", run: () => setPane((p) => { const open = !(p.l || p.r); return { ...p, l: open, r: open }; }) },
+    { id: "pt", group: tx("View"), label: pane.tl ? tx("Hide the timeline") : tx("Show the timeline"), keys: "Ctrl+Shift+\\", run: () => flip("tl") },
     { id: "folder", group: tx("Film"), label: tx("Open the film folder"), run: () => tool("reveal", { path: info?.dir }) },
     { id: "lip", group: tx("Film"), label: tx("Make the mouth from the film's sound"), run: lip },
     { id: "claude", group: tx("Film"), label: tx("Introduce the film to Claude"), run: () => copy(tx("claude: open the film \"{0}\" ({1}) in Linnea: look at its state with hub_project and hub_live.", info?.title, id), tx("Copied")) },
@@ -577,6 +594,10 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
     { label: (snapOn ? "✓ " : "") + tx("Snapping"), run: () => setSnapOn(!snapOn) },
     { label: (board ? "✓ " : "") + tx("Storyboard"), keys: "B", run: () => setBoard(!board) },
     { label: (loop ? "✓ " : "") + tx("Loop"), run: () => setLoop(!loop) },
+    "-",
+    { label: (pane.l ? "✓ " : "") + tx("Left panel"), run: () => flip("l") },
+    { label: (pane.r ? "✓ " : "") + tx("Right panel"), run: () => flip("r") },
+    { label: (pane.tl ? "✓ " : "") + tx("Timeline"), keys: "Ctrl+Shift+\\", run: () => flip("tl") },
     "-",
     { label: tx("All commands…"), keys: "Ctrl+K", run: () => setPalette(true) },
     { label: tx("Keyboard shortcuts"), keys: "?", run: () => setKeysOpen(true) },
@@ -641,12 +662,13 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
     } as Lane,
   ].filter((ln) => ln.key !== "elements" || reg.length > 0);
   const puppetInfo = (name: string) => win()?.KE_PUPPET?.(name) || null;
+  const SIDE_TABS = [["props", tx("Properties"), SlidersHorizontal], ["sound", tx("Sound"), Volume2], ["langs", tx("Languages"), LanguagesIcon], ["ai", tx("Assistant"), Bot], ["versions", tx("Versions"), History]] as const;
 
   if (err) return <div className="page"><button className="btn ghost" onClick={back}><ArrowLeft />{tx("Films")}</button><p className="err" style={{ marginTop: 16 }}>{err}</p></div>;
   if (!info) return <div className="page"><span className="muted">{tx("Loading")}</span></div>;
   const askEditable = () => navigator.clipboard.writeText(tx("Make the film \"{0}\" ({1}) in Linnea editable: draw every text and element on screen (title frames, caption boxes, characters, objects) with KE.text / KE.group so I can move and resize each as one piece in the app. Keep the current tweaks.json edits. Then hub_live.", info.title, id)).then(() => say(tx("Message for Claude copied")));
   return (
-    <div className="ed film-ed" style={{ gridTemplateColumns: "288px minmax(0, 1fr) 320px" }}>
+    <div className="ed film-ed" style={{ gridTemplateColumns: `${pane.l ? 288 : 44}px minmax(0, 1fr) ${pane.r ? 320 : 44}px` }}>
       <div className="ed-top">
         <button className="btn icon ghost" onClick={back} title={tx("Films")}><ArrowLeft /></button>
         <span className="title">{info.title}</span>
@@ -681,11 +703,22 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
         <RenderMenu disabled={!!busy} latest={latest} fixed={toCheck.length + notes.filter((n) => n.status === "done" && !n.version).length} run={run} lang={viewLang?.code || ""} />
       </div>
 
-      <div className="ed-left" style={{ padding: 0, gap: 0 }}>
+      {!pane.l && (
+        <div className="ed-left rail">
+          <button className="rail-b" title={tx("Show the left panel")} onClick={() => flip("l")}><PanelLeftOpen /></button>
+          <span className="rail-sep" />
+          {([["layers", tx("Layers"), LayersIcon, L.items.length], ["add", tx("Add"), Plus, 0], ["notes", tx("Notes"), StickyNote, openNotes.length]] as const).map(([k, l, I, n]) => (
+            <button key={k} className={`rail-b ${left === k ? "on" : ""}`} title={l} onClick={() => { showLeft(k); if (k === "add") setPlaying(false); }}><I />{n ? <span className="rail-n">{n}</span> : null}</button>
+          ))}
+        </div>
+      )}
+      <div className="ed-left" style={{ padding: 0, gap: 0, display: pane.l ? undefined : "none" }}>
         <div className="tabs">
           <button className={left === "layers" ? "on" : ""} onClick={() => setLeft("layers")}>{tx("Layers")}{L.items.length ? <span className="tab-n">{L.items.length}</span> : null}</button>
           <button className={left === "add" ? "on" : ""} onClick={() => { setLeft("add"); setPlaying(false); }}><Plus size={14} style={{ marginRight: 2, verticalAlign: -2 }} />{tx("Add")}</button>
           <button className={left === "notes" ? "on" : ""} onClick={() => setLeft("notes")}>{tx("Notes")}{openNotes.length ? <span className="tab-n">{openNotes.length}</span> : null}</button>
+          <span className="tabs-fill" />
+          <button className="tabs-x" title={tx("Hide the left panel (Ctrl+\\ hides both)")} onClick={() => flip("l")}><PanelLeftClose /></button>
         </div>
         <div className="tab-body">
           {left !== "notes" && !L.installed && (
@@ -696,7 +729,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
           )}
           {left === "layers" && <LayerStack L={L} t={t} sel={sel2d} multi={chosen} select={select} seek={(x) => { setPlaying(false); seek(x); }} reg={reg} E={E} selEl={selEl} scanning={scanning}
             pickEl={(x, t0, t1) => { setSelEl(x); setSel2d(""); setMulti([]); setSide("props"); if (tRef.current < t0 || tRef.current >= t1) { setPlaying(false); seek(t0 + 0.05); } }}
-            onMenu={(x, y, lid) => setMenu({ x, y, id: lid })} onAdd={() => setLeft("add")} askClaude={askEditable} />}
+            onMenu={(x, y, lid) => setMenu({ x, y, id: lid })} onAdd={() => showLeft("add")} askClaude={askEditable} />}
           {left === "add" && <AddPanel L={L} t={t} W={W} H={H} dur={DUR} say={say} select={(ids) => { select(ids); }} addSound={addSound}
             scenes={<SceneGrid film={id} L={L} t={t} W={W} H={H} dur={DUR} say={say} select={(ids) => select(ids)} />}
             puppets={(dropRef: any) => <PuppetGrid film={id} L={L} t={t} W={W} H={H} dur={DUR} say={say} select={(ids) => select(ids)} dropRef={dropRef} makeFromImage={puppetFromImage} />} />}
@@ -724,19 +757,24 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
         {!ready && !watch && <div className="muted" style={{ fontSize: 12 }}>{pageErr ? <span className="err">{pageErr}</span> : tx("Loading the page")}</div>}
         {ready && pageErr && <div className="err" style={{ fontSize: 12 }}>{pageErr}</div>}
         <div className="transport">
-          <button className="btn icon sm ghost" onClick={() => seek(0)} title={tx("Start (Home)")}><SkipBack /></button>
-          <button className="btn icon sm ghost" onClick={() => seek(t - 1 / FPS)} title={tx("Previous frame (,)")}><ChevronLeft /></button>
-          <button className="btn icon" onClick={() => setPlaying(!playing)} disabled={mode !== "live"} title={tx("Play / pause (Space, K)")}>{playing ? <Pause /> : <Play />}</button>
-          <button className="btn icon sm ghost" onClick={() => seek(t + 1 / FPS)} title={tx("Next frame (.)")}><ChevronRight /></button>
-          <button className="btn icon sm ghost" onClick={() => seek(DUR)} title={tx("End (End)")}><SkipForward /></button>
-          <span className="tc"><b>{tc(t, FPS)}</b> <span>/ {tc(DUR, FPS)}</span></span>
-          <span className="muted num" style={{ fontSize: 12 }}>{tx("frame")} {Math.round(t * FPS)}</span>
-          <button className={`btn icon sm ${loop ? "" : "ghost"}`} onClick={() => setLoop(!loop)} title={tx("Loop")}><Repeat /></button>
-          <span style={{ width: 8 }} />
-          <button className={`btn sm ${mode === "note" ? "primary" : ""}`} onClick={() => { setPlaying(false); setMode(mode === "note" ? "live" : "note"); }}><Pen />{tx("Note")} <span className="kbd">N</span></button>
-          <button className="btn sm" onClick={sendFrame} title={tx("Capture the frame (or the selected range) for Claude")}><ImageIcon />{range ? tx("Range to Claude") : tx("Frame to Claude")}</button>
-          {range && <button className="btn icon sm ghost" title={tx("Clear range")} onClick={() => setRange(null)}><X /></button>}
-          <span className="grow" />
+          <div className="tp-g">
+            <button className="btn icon sm ghost" onClick={() => seek(0)} title={tx("Start (Home)")}><SkipBack /></button>
+            <button className="btn icon sm ghost" onClick={() => seek(t - 1 / FPS)} title={tx("Previous frame (,)")}><ChevronLeft /></button>
+            <button className="btn icon tp-play" onClick={() => setPlaying(!playing)} disabled={mode !== "live"} title={tx("Play / pause (Space, K)")}>{playing ? <Pause /> : <Play />}</button>
+            <button className="btn icon sm ghost" onClick={() => seek(t + 1 / FPS)} title={tx("Next frame (.)")}><ChevronRight /></button>
+            <button className="btn icon sm ghost" onClick={() => seek(DUR)} title={tx("End (End)")}><SkipForward /></button>
+          </div>
+          <div className="tp-g">
+            <span className="tc"><b>{tc(t, FPS)}</b> <span>/ {tc(DUR, FPS)}</span></span>
+            <span className="muted num tp-frame" style={{ fontSize: 12 }}>{tx("frame")} {Math.round(t * FPS)}</span>
+            <button className={`btn icon sm ${loop ? "" : "ghost"}`} onClick={() => setLoop(!loop)} title={tx("Loop")}><Repeat /></button>
+          </div>
+          <div className="tp-g">
+            <button className={`btn sm ${mode === "note" ? "primary" : ""}`} onClick={() => { setPlaying(false); setMode(mode === "note" ? "live" : "note"); }} title={tx("Note (N)")}><Pen /><span className="lbl">{tx("Note")}</span> <span className="kbd lbl">N</span></button>
+            <button className="btn sm" onClick={sendFrame} title={tx("Capture the frame (or the selected range) for Claude")}><ImageIcon /><span className="lbl">{range ? tx("Range to Claude") : tx("Frame to Claude")}</span></button>
+            {range && <button className="btn icon sm ghost" title={tx("Clear range")} onClick={() => setRange(null)}><X /></button>}
+          </div>
+          <div className="tp-g">
           {viewLang && <button className="btn sm ghost" title={tx("Back to the original texts")} onClick={() => setViewLang(null)} style={{ color: "var(--accent)" }}>{viewLang.code} <X /></button>}
           <select className="select zoomsel" value={zoom ? String(zoom) : "0"} title={tx("Zoom the frame (Ctrl + wheel; Ctrl+0 fits)")} onChange={(e) => setZoom(+e.target.value)}>
             <option value="0">{tx("Fit")}{!zoom ? ` · ${Math.round(viewScale * 100)}%` : ""}</option>
@@ -746,16 +784,25 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
           <button className={`btn icon sm ${guides ? "" : "ghost"}`} onClick={() => setGuides(guides === "" ? "safe" : guides === "safe" ? "thirds" : "")} title={tx("Safe areas / thirds (G)")} style={guides ? { color: "var(--accent)" } : undefined}><Grid3x3 /></button>
           <button className={`btn icon sm ${board ? "" : "ghost"}`} onClick={() => setBoard(!board)} title={tx("Storyboard (B)")}><LayoutGrid /></button>
           <button className="btn icon sm ghost" onClick={() => setKeysOpen(true)} title={tx("Keyboard shortcuts (?)")}><Keyboard /></button>
+          </div>
         </div>
         {board && !watch && info && <Storyboard url={info.url} rev={rev} lang={viewLang?.code || ""} W={W} H={H} dur={DUR} scenes={scenesRef.current} t={t} seek={(x) => { setPlaying(false); seek(x); }} />}
         {keysOpen && <Shortcuts close={() => setKeysOpen(false)} />}
         {info.audio && <audio ref={audio} src={fileUrl(info.audio, audioV)} preload="auto" />}
       </div>
 
-      <div className="ed-right" style={{ padding: 0, gap: 0 }}>
-        <div className="tabs">
-          {([["props", tx("Properties")], ["sound", tx("Sound")], ["langs", tx("Languages")], ["ai", tx("Assistant")], ["versions", tx("Versions")]] as const).map(([k, l]) => (
-            <button key={k} className={side === k ? "on" : ""} onClick={() => setSide(k)}>{l}</button>
+      {!pane.r && (
+        <div className="ed-right rail">
+          <button className="rail-b" title={tx("Show the right panel")} onClick={() => flip("r")}><PanelRightOpen /></button>
+          <span className="rail-sep" />
+          {SIDE_TABS.map(([k, l, I]) => <button key={k} className={`rail-b ${side === k ? "on" : ""}`} title={l} onClick={() => showSide(k)}><I /></button>)}
+        </div>
+      )}
+      <div className="ed-right" style={{ padding: 0, gap: 0, overflow: "hidden", display: pane.r ? undefined : "none" }}>
+        <div className="tabs side-tabs">
+          <button className="tabs-x" title={tx("Hide the right panel (Ctrl+\\ hides both)")} onClick={() => flip("r")}><PanelRightClose /></button>
+          {SIDE_TABS.map(([k, l, I]) => (
+            <button key={k} className={side === k ? "on" : ""} title={l} onClick={() => setSide(k)}><I className="tab-i" /><span className="tab-l">{l}</span></button>
           ))}
         </div>
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 24, overflow: "auto", flex: 1 }}>
@@ -803,7 +850,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
 
       <div className="dock">
         <FilmTimeline dur={DUR} fps={FPS} t={t} seek={(x: number) => { setPlaying(false); seek(x); }} scenes={scenes.length ? scenes : info.scenes || []} notes={notes} range={range} setRange={setRange} changed={latest?.changedRanges || []} chunkSec={info.chunk_frames / FPS} lanes={lanes}
-          playing={playing} snapOn={snapOn} setSnapOn={setSnapOn}
+          playing={playing} snapOn={snapOn} setSnapOn={setSnapOn} open={pane.tl} setOpen={() => flip("tl")}
           tools={<>
             <button className="btn sm ghost" title={tx("Split the selected layer at the playhead (S)")} disabled={!one || t <= one.t0 || t >= one.t1} onClick={() => { const r = split(L.items, one!.id, t); if (r.id) { L.update(r.items); select([r.id]); } }}><Scissors />{tx("Split")}</button>
             <button className="btn sm ghost" title="Alt+[" disabled={!chosen.length} onClick={() => L.update(trim(L.items, chosen, t, "start"))}>{tx("Start here")}</button>
@@ -1273,7 +1320,7 @@ function VersionPlayer({ v, onTime, close, note }: Json) {
 const HEAD = 148;
 /** The film's timeline: ruler, render chunks, scenes, notes and one lane per layer, grouped and foldable.
  *  Ctrl + wheel zooms around the pointer, Shift + wheel (or a trackpad swipe) scrolls; bars snap. */
-function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, changed, chunkSec, lanes, playing, snapOn, setSnapOn, tools }: Json) {
+function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, changed, chunkSec, lanes, playing, snapOn, setSnapOn, tools, open = true, setOpen }: Json) {
   const box = useRef<HTMLDivElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(800);
@@ -1366,8 +1413,9 @@ function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, ch
   const snaps = useMemo(() => !snapOn ? undefined : [0, D, t, ...scenes.flatMap((s: Json) => [s.t0, s.t1]), ...(range || []), ...(lanes as Lane[]).flatMap((ln) => ln.items.flatMap((i) => [i.s, i.e]))], [snapOn, D, t, scenes, range, lanes]);
   return (
     <>
-      <div className="tl-resize" onPointerDown={resize} title={tx("Drag to make the timeline taller or shorter")} />
+      {open && <div className="tl-resize" onPointerDown={resize} title={tx("Drag to make the timeline taller or shorter")} />}
       <div className="tl-bar">
+        {setOpen && <button className="btn icon sm ghost" title={open ? tx("Hide the timeline (Ctrl+Shift+\\)") : tx("Show the timeline (Ctrl+Shift+\\)")} onClick={setOpen}>{open ? <ChevronDown /> : <ChevronUp />}</button>}
         {tools}
         <span className="tl-sep" />
         <button className={`btn icon sm ${snapOn ? "" : "ghost"}`} style={snapOn ? { color: "var(--accent)" } : undefined} title={tx("Snapping (bars stick to the playhead, cuts and each other; hold Alt to drag freely)")} onClick={() => setSnapOn(!snapOn)}><Magnet /></button>
@@ -1378,7 +1426,7 @@ function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, ch
         <button className="btn icon sm ghost" title={tx("Zoom in (Ctrl + wheel)")} onClick={() => zoomAt(zoom * 1.5, t)}><ZoomIn /></button>
         <button className="btn sm ghost" title={tx("Show the whole film")} onClick={() => { setZoom(1); setOff(0); }}>{tx("Fit")}</button>
       </div>
-      <div className="tl-wrap" ref={wrap} style={{ height: tlH, maxHeight: "none" }}>
+      <div className="tl-wrap" ref={wrap} style={{ height: tlH, maxHeight: "none", display: open ? undefined : "none" }}>
         <div className="tl" ref={box} onMouseDown={down} onMouseMove={(e) => { const r = box.current!.getBoundingClientRect(); setHover(e.clientX - r.left > HEAD ? at(e) : null); }} onMouseLeave={() => setHover(null)} style={{ height }}>
           {rows.filter((r) => r.kind === "lane").map((r) => <TrackLane key={r.key} lane={r.lane!} top={r.y} sx={sx} pad={HEAD - offC * sx} total={D} snaps={snaps} onSnap={setSnapLine} />)}
           {ticks.map((x) => (

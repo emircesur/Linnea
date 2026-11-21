@@ -1,5 +1,6 @@
 # Builds Linnea for Windows, macOS and Linux. A tag such as v0.1.0 publishes the three as a GitHub release;
-# main pushes and manual runs only build them and keep them as downloadable artifacts.
+# main pushes only build them and keep them as downloadable artifacts. A manual run with "publish" ticked
+# releases the version in Cargo.toml: it makes the tag (v0.1.6, say) on the commit it built.
 name: Release
 
 on:
@@ -7,6 +8,11 @@ on:
     branches: ["main"]
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish a release for the version in Cargo.toml (makes the tag vX.Y.Z)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -121,17 +127,27 @@ jobs:
           path: dist/*.tar.gz
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
     needs: [windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      # the tag pushed, or v + the version in Cargo.toml for a manual run
+      - id: v
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then tag="$GITHUB_REF_NAME"
+          else tag="v$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           path: out
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          name: Linnea ${{ github.ref_name }}
+          name: Linnea ${{ steps.v.outputs.tag }}
+          tag_name: ${{ steps.v.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: |
             out/Linnea-Setup.exe
             out/*.dmg

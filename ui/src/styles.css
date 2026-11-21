@@ -208,9 +208,9 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; font: 400 12
 .monitor .badge { position: absolute; left: 8px; top: 8px; font-size: 11px; line-height: 18px; padding: 0 6px; border-radius: 6px; background: rgba(0, 0, 0, 0.6); color: #ddd; }
 .transport { display: flex; align-items: center; justify-content: center; gap: 12px; height: 40px; flex: 0 0 40px; white-space: nowrap; max-width: 100%; }
 .transport > * { flex: 0 0 auto; }
-.transport > .btn.icon:not(.sm) { width: 40px; height: 40px; border-radius: 20px; background: var(--primary-bg); color: var(--primary-fg); border-color: transparent; }
-.transport > .btn.icon:not(.sm):hover { background: color-mix(in srgb, var(--primary-bg) 88%, var(--bg)); }
-.transport > .btn.icon:not(.sm) svg { width: 18px; height: 18px; }
+.transport .btn.icon:not(.sm) { width: 40px; height: 40px; border-radius: 20px; background: var(--primary-bg); color: var(--primary-fg); border-color: transparent; }
+.transport .btn.icon:not(.sm):hover { background: color-mix(in srgb, var(--primary-bg) 88%, var(--bg)); }
+.transport .btn.icon:not(.sm) svg { width: 18px; height: 18px; }
 .transport .tc { font-size: 13px; }
 .transport .tc b { font-weight: 500; color: var(--text); }
 .transport .tc span { color: var(--text-3); }
@@ -470,3 +470,33 @@ input.lrow-name { all: unset; flex: 1; min-width: 0; font-size: 12px; color: var
 .rig-head { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: #fff; pointer-events: none; }
 button.lrow { width: 100%; text-align: left; font: inherit; background: none; color: var(--text-2); }
 button.lrow:hover { background: var(--hover); color: var(--text); }
+
+/* ---------- film editor: panels that open and close, a transport that fits ---------- */
+.film-ed .stage { overflow: hidden; container-type: inline-size; }
+.film-ed .transport { flex-wrap: wrap; height: auto; min-height: 40px; flex: 0 0 auto; row-gap: 6px; column-gap: 16px; white-space: nowrap; width: 100%; }
+.tp-g { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.tp-g .btn.sm .lbl { display: inline; }
+@container (max-width: 900px) { .film-ed .transport .lbl, .film-ed .transport .tp-frame { display: none !important; } .film-ed .transport .btn.sm { padding: 0 8px; } }
+@container (max-width: 560px) { .film-ed .transport { column-gap: 8px; } }
+.film-ed .tabs, .film-ed .transport, .tl-bar, .rail, .tl-head { user-select: none; -webkit-user-select: none; }
+.film-ed .tabs { align-items: flex-end; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.film-ed .tabs::-webkit-scrollbar { display: none; }
+.film-ed .tabs > button { flex: 0 0 auto; white-space: nowrap; }
+.tabs-fill { flex: 1 1 auto; }
+.tabs .tabs-x { height: 30px; width: 30px; margin-bottom: 2px; padding: 0; border-radius: 8px; display: grid; place-items: center; color: var(--text-3); box-shadow: none !important; }
+.tabs .tabs-x:hover { background: var(--hover); color: var(--text); }
+.tabs .tabs-x svg { width: 16px; height: 16px; }
+.side-tabs { padding-left: 6px; gap: 0; }
+.side-tabs > button:not(.tabs-x) { display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; }
+.side-tabs .tab-i { width: 15px; height: 15px; flex: none; }
+/* only the open tab shows its name when the panel is narrow; the others keep an icon and a tooltip */
+.film-ed .ed-right { container-type: inline-size; }
+.side-tabs > button:not(.on) .tab-l { display: none; }
+@container (min-width: 460px) { .side-tabs > button:not(.on) .tab-l { display: inline; } }
+.rail { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; overflow: hidden; }
+.rail-b { position: relative; width: 32px; height: 32px; border-radius: 9px; border: 0; background: none; color: var(--text-3); display: grid; place-items: center; cursor: pointer; }
+.rail-b:hover { background: var(--hover); color: var(--text); }
+.rail-b.on { color: var(--text); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.rail-b svg { width: 17px; height: 17px; }
+.rail-n { position: absolute; right: 1px; top: 1px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; background: var(--accent); color: var(--on-accent); font: 600 9px/14px var(--mono); }
+.rail-sep { width: 20px; height: 1px; background: var(--line); margin: 2px 0; }
