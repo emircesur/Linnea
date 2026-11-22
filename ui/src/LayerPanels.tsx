@@ -5,11 +5,11 @@ import { tx } from "./i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight, Bookmark, Circle, CircleDot, Diamond, Eye, EyeOff, Gauge, GripVertical, Hash, Image as ImageIcon, Keyboard, Link2, Lock, PenLine, Plus, Rows3, Search,
-  Smartphone, Sparkles, Square, Subtitles, FolderClosed, Film, Music, ChevronRight, Type, TypeOutline, Unlock, X, Blend, PanelBottom, MessageSquareText, Clapperboard,
+  Smartphone, Sparkles, Square, Subtitles, FolderClosed, Film, Music, ChevronRight, Trash2, Type, TypeOutline, Unlock, X, Blend, PanelBottom, MessageSquareText, Clapperboard,
 } from "lucide-react";
 import { Json, tool } from "./api";
 import { DROP, evalItem, Item, Layers, newItem, videoItem } from "./Layers";
-import { deletePreset, fromPreset, kindLabel, layerName, moveTo, myPresets, r2, uid } from "./LayerOps";
+import { deletePreset, fromPreset, hideThenDeleteEls, hideThenRemove, kindLabel, layerName, moveTo, myPresets, r2, uid } from "./LayerOps";
 import { LayerInspector, MultiInspector } from "./Inspector";
 import type { Elements, Reg } from "./Elements";
 import { PuppetInfo } from "./Puppets";
@@ -151,7 +151,29 @@ export function LayerStack({ L, t, sel, multi, select, seek, reg, E, selEl, pick
   };
   if (q || now) items.forEach((it, i) => { if (match(layerName(it) + " " + it.kind) && (!now || (t >= it.t0 && t < it.t1))) rows.unshift({ it, i, depth: 0 }); });
   else walk(undefined, 0);
-  const code = (reg || []).filter((r) => { const e = E?.edits[r.id] || {}; const t0 = e.t0 ?? r.t0, t1 = e.t1 ?? r.t1; return match((e.text ?? r.label) + " " + r.kind) && (!now || (t >= t0 && t < t1)); });
+  const code = (reg || []).filter((r) => { const e = E?.edits[r.id] || {}; const t0 = e.t0 ?? r.t0, t1 = e.t1 ?? r.t1; return !e.deleted && match((e.text ?? r.label) + " " + r.kind) && (!now || (t >= t0 && t < t1)); });
+  const gone = (reg || []).filter((r) => E?.edits[r.id]?.deleted);
+  const [goneOpen, setGoneOpen] = useState(false);
+  // hide first, delete on the second press: one layer, or a whole group of them
+  const trashLayers = (ids: string[], ask = false) => {
+    const all = items.filter((x) => ids.includes(x.id));
+    if (!all.length) return;
+    if (ask && all.every((x) => x.hidden) && !window.confirm(tx("Delete all {0} layers? (Ctrl+Z brings them back)", all.length))) return;
+    const r = hideThenRemove(items, ids);
+    L.update(r.items);
+    if (r.removed) select(chosen.filter((x) => !ids.includes(x)));
+  };
+  const trashEls = (ids: string[], ask = false) => {
+    if (!E || !ids.length) return;
+    if (ask && ids.every((id) => E.edits[id]?.hidden) && !window.confirm(tx("Delete all {0} elements? They leave the picture and the lists; the code is not touched, and Layers › Deleted brings them back.", ids.length))) return;
+    E.update(hideThenDeleteEls(E.edits, ids).edits);
+  };
+  const eyeAll = (hidden: boolean) => L.update(items.map((x) => ({ ...x, hidden: hidden || undefined })));
+  const eyeEls = (ids: string[], hidden: boolean) => E && E.update(Object.fromEntries(Object.entries({ ...E.edits, ...Object.fromEntries(ids.map((id) => [id, { ...(E.edits[id] || {}), hidden }])) })));
+  const Trash = ({ hidden, onClick, many }: { hidden: boolean; onClick: () => void; many?: boolean }) => (
+    <button className={`lrow-b del ${hidden ? "armed" : ""}`} title={hidden ? (many ? tx("Delete them all") : tx("Delete")) : many ? tx("Hide them all (press again to delete)") : tx("Hide (press again to delete)")}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}><Trash2 /></button>
+  );
   const chosen = multi.length ? multi : sel ? [sel] : [];
   const click = (e: React.MouseEvent, it: Item) => {
     if (e.shiftKey && chosen.length) {
@@ -174,7 +196,14 @@ export function LayerStack({ L, t, sel, multi, select, seek, reg, E, selEl, pick
         {onAdd && <button className="btn icon sm" title={tx("Add (A)")} onClick={onAdd}><Plus /></button>}
       </div>
       <div className="stack-list">
-        <div className="stack-g">{tx("Your layers")} <span className="muted">{items.length}</span></div>
+        <div className="stack-g">{tx("Your layers")} <span className="muted">{items.length}</span><span className="grow" />
+          {items.length > 0 && (
+            <span className="stack-g-b">
+              <button className={`lrow-b ${items.every((x) => x.hidden) ? "keep" : ""}`} title={items.every((x) => x.hidden) ? tx("Show them all") : tx("Hide them all")} onClick={() => eyeAll(!items.every((x) => x.hidden))}>{items.every((x) => x.hidden) ? <EyeOff /> : <Eye />}</button>
+              <Trash hidden={items.every((x) => x.hidden)} many onClick={() => trashLayers(items.map((x) => x.id), true)} />
+            </span>
+          )}
+        </div>
         {rows.map(({ it, i, depth }) => {
           const I = KIND_ICON[it.kind] || Square;
           const live = t >= it.t0 && t < it.t1;
@@ -207,6 +236,7 @@ export function LayerStack({ L, t, sel, multi, select, seek, reg, E, selEl, pick
               <span className="lrow-t num">{fmt(it.t0)}</span>
               <button className={`lrow-b ${it.locked ? "keep" : ""}`} title={it.locked ? tx("Unlock") : tx("Lock")} onClick={(e) => { e.stopPropagation(); put(it.id, { locked: !it.locked || undefined }); }}>{it.locked ? <Lock /> : <Unlock />}</button>
               <button className={`lrow-b ${it.hidden ? "keep" : ""}`} title={it.hidden ? tx("Show") : tx("Hide")} onClick={(e) => { e.stopPropagation(); put(it.id, { hidden: !it.hidden || undefined }); }}>{it.hidden ? <EyeOff /> : <Eye />}</button>
+              <Trash hidden={!!it.hidden} onClick={() => trashLayers([it.id], it.kind === "group" && items.some((x) => x.parent === it.id))} />
             </div>
           );
         })}
@@ -228,7 +258,18 @@ export function LayerStack({ L, t, sel, multi, select, seek, reg, E, selEl, pick
         )}
         {reg && E && (
           <>
-            <div className="stack-g" onClick={() => setCodeOpen(!codeOpen)} style={{ cursor: "pointer" }}>{tx("From the film's code")} <span className="muted">{scanning ? tx("scanning…") : reg.length}</span><span className="grow" />{codeOpen ? "−" : "+"}</div>
+            <div className="stack-g" onClick={() => setCodeOpen(!codeOpen)} style={{ cursor: "pointer" }}>
+              <ChevronRight size={12} style={{ transform: codeOpen ? "rotate(90deg)" : undefined, flex: "none" }} />{tx("From the film's code")} <span className="muted">{scanning ? tx("scanning…") : code.length}</span><span className="grow" />
+              {code.length > 0 && (() => {
+                const ids = code.map((r) => r.id), allHidden = ids.every((id) => E.edits[id]?.hidden);
+                return (
+                  <span className="stack-g-b" onClick={(e) => e.stopPropagation()}>
+                    <button className={`lrow-b ${allHidden ? "keep" : ""}`} title={allHidden ? tx("Show them all") : tx("Hide them all")} onClick={() => eyeEls(ids, !allHidden)}>{allHidden ? <EyeOff /> : <Eye />}</button>
+                    <Trash hidden={allHidden} many onClick={() => trashEls(ids, true)} />
+                  </span>
+                );
+              })()}
+            </div>
             {codeOpen && code.map((r) => {
               const e = E.edits[r.id] || {};
               const t0 = e.t0 ?? r.t0, t1 = e.t1 ?? r.t1;
@@ -241,9 +282,25 @@ export function LayerStack({ L, t, sel, multi, select, seek, reg, E, selEl, pick
                   {Object.keys(e).length > 0 && <span className="flag acc" title={tx("Edited by hand")}>•</span>}
                   <span className="lrow-t num">{fmt(t0)}</span>
                   <button className={`lrow-b ${e.hidden ? "keep" : ""}`} title={e.hidden ? tx("Show") : tx("Hide")} onClick={(ev) => { ev.stopPropagation(); E.set(r.id, { hidden: !e.hidden }); }}>{e.hidden ? <EyeOff /> : <Eye />}</button>
+                  <Trash hidden={!!e.hidden} onClick={() => trashEls([r.id])} />
                 </div>
               );
             })}
+            {gone.length > 0 && (
+              <>
+                <div className="stack-g" onClick={() => setGoneOpen(!goneOpen)} style={{ cursor: "pointer" }}>
+                  <ChevronRight size={12} style={{ transform: goneOpen ? "rotate(90deg)" : undefined, flex: "none" }} />{tx("Deleted")} <span className="muted">{gone.length}</span><span className="grow" />
+                  <button className="btn sm ghost" style={{ height: 22, fontSize: 11 }} onClick={(e) => { e.stopPropagation(); E.update(Object.fromEntries(Object.entries(E.edits).map(([k, v]: [string, Json]) => [k, v?.deleted ? { ...v, deleted: undefined, hidden: undefined } : v]))); }}>{tx("Bring all back")}</button>
+                </div>
+                {goneOpen && gone.map((r) => (
+                  <div key={r.id} className="lrow el" style={{ opacity: 0.6 }}>
+                    <span className="dot" />
+                    <span className="lrow-name" style={{ textDecoration: "line-through" }}>{E.edits[r.id]?.text ?? r.label}</span>
+                    <button className="btn sm ghost" style={{ height: 22, fontSize: 11 }} onClick={() => E.set(r.id, { deleted: undefined, hidden: undefined })}>{tx("Bring back")}</button>
+                  </div>
+                ))}
+              </>
+            )}
             {codeOpen && !reg.length && !scanning && (
               <div className="empty">
                 <span>{tx("The film's code draws nothing Linnea can pick out yet.")}</span>

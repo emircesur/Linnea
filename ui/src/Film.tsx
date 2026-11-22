@@ -10,10 +10,10 @@ import { evalItem, LayerOverlay, useLayerKeys, useLayers } from "./Layers";
 import { AddPanel, Command, LayerStack, Menu, MenuButton, MenuItem, Palette, PuppetGrid } from "./LayerPanels";
 import { SceneGrid } from "./Scenes";
 import { LayerInspector, MultiInspector } from "./Inspector";
-import { copyItems, copyStyle, duplicate, group, hasClip, keyTimes, layerName, moveKeyTime, pasteItems, pasteStyle, r2 as rr2, remove, reorder, replace, split, trim, ungroup, withInside } from "./LayerOps";
+import { copyItems, copyStyle, duplicate, group, hasClip, hideThenDeleteEls, hideThenRemove, keyTimes, layerName, moveKeyTime, pasteItems, pasteStyle, r2 as rr2, remove, reorder, replace, split, trim, ungroup, withInside } from "./LayerOps";
 import { DROP } from "./Layers";
 import { Command as CmdIcon, Grid3x3, Magnet, Scissors, ZoomIn, ZoomOut, MousePointerClick } from "lucide-react";
-import { Bot, ChevronDown, ChevronUp, History, Languages as LanguagesIcon, Layers as LayersIcon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SlidersHorizontal, StickyNote, Volume2 } from "lucide-react";
+import { Eye, EyeOff, Bot, ChevronDown, ChevronUp, History, Languages as LanguagesIcon, Layers as LayersIcon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SlidersHorizontal, StickyNote, Volume2 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Lane, LANE_H, laneRows, TrackLane } from "./Tracks";
 import { PuppetFields, puppetFromImage } from "./Puppets";
@@ -412,7 +412,14 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
           ke.E.set(ke.selEl, { dx: (ed.dx || 0) + (e.key === "ArrowLeft" ? -d : e.key === "ArrowRight" ? d : 0), dy: (ed.dy || 0) + (e.key === "ArrowUp" ? -d : e.key === "ArrowDown" ? d : 0) });
           return;
         }
-        if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); ke.E.set(ke.selEl, { hidden: true }); return; }
+        if (e.key === "Delete" || e.key === "Backspace") {
+          // the first press hides it, the second deletes it (out of the picture and the lists, the code untouched)
+          e.preventDefault();
+          const r = hideThenDeleteEls(ke.E.edits, [ke.selEl]);
+          ke.E.update(r.edits);
+          if (r.deleted) setSelEl(""); else say(tx("Hidden: press Delete again to delete"));
+          return;
+        }
         if (e.key === "Escape") { e.preventDefault(); setSelEl(""); return; }
       }
       if ((e.ctrlKey || e.metaKey) && (e.key === "\\" || e.code === "Backslash")) {
@@ -640,7 +647,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
         const inner = it0.kind === "group" && d ? withInside(L.items, [x]).filter((y) => y !== x) : [];
         L.update(L.items.map((q) => (inner.includes(q.id) ? { ...q, t0: rr2(q.t0 + d), t1: rr2(q.t1 + d), keys: q.keys?.map((k) => ({ ...k, t: rr2(k.t + d) })), pkeys: q.pkeys?.map((k: Json) => ({ ...k, t: rr2(k.t + d) })) } : q.id === x ? { ...q, t0: s, t1: e, keys: d ? q.keys?.map((k) => ({ ...k, t: rr2(k.t + d) })) : q.keys, pkeys: d ? q.pkeys?.map((k: Json) => ({ ...k, t: rr2(k.t + d) })) : q.pkeys } : q)));
       },
-      onDelete: (lid) => { L.update(remove(L.items, [lid.slice(2)])); select([]); },
+      onDelete: (lid) => { const r = hideThenRemove(L.items, [lid.slice(2)]); L.update(r.items); if (r.removed) select([]); },
       onMark: (lid, from, to) => {
         const x = lid.slice(2);
         L.update(L.items.map((q) => {
@@ -657,10 +664,10 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
   const lanes: Lane[] = [
     {
       key: "elements", group: "elements", groupLabel: tx("From the film's code"), label: tx("Code elements"), color: "#7fb0ff", sel: selEl ? `e:${selEl}` : "", stack: true, ownKeys: false,
-      items: reg.map((r) => ({ id: `e:${r.id}`, s: E.edits[r.id]?.t0 ?? r.t0, e: E.edits[r.id]?.t1 ?? r.t1, label: (E.edits[r.id]?.hidden ? tx("(hidden) ") : "") + (E.edits[r.id]?.text ?? r.label), dim: !!E.edits[r.id]?.hidden })),
+      items: reg.filter((r) => !E.edits[r.id]?.deleted).map((r) => ({ id: `e:${r.id}`, s: E.edits[r.id]?.t0 ?? r.t0, e: E.edits[r.id]?.t1 ?? r.t1, label: (E.edits[r.id]?.hidden ? tx("(hidden) ") : "") + (E.edits[r.id]?.text ?? r.label), dim: !!E.edits[r.id]?.hidden })),
       onSelect: (eid) => { setSelEl(eid.slice(2)); setSel2d(""); setMulti([]); setSide("props"); },
       onChange: (eid, s, e) => E.set(eid.slice(2), { t0: s, t1: e }),
-      onDelete: (eid) => E.set(eid.slice(2), { hidden: true }),
+      onDelete: (eid) => { const r = hideThenDeleteEls(E.edits, [eid.slice(2)]); E.update(r.edits); if (r.deleted) setSelEl(""); },
     } as Lane,
     ...[...L.items].reverse().map(laneOf),
     {
@@ -766,7 +773,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
               {guides && <FrameGuides W={W} H={H} kind={guides} />}
               {editOn && (() => { const f = loose.find((x) => Math.abs(x.t - t) < 0.02); return f ? <LooseBoxes W={W} H={H} boxes={f.loose} /> : null; })()}
               {mode === "note" && <NoteLayer W={W} H={H} t={t} range={range} fps={FPS} cancel={() => setMode("live")} save={async (p: Json) => { setBusy({ label: tx("Saving the note"), p: 0.5 }); try { await tool("hub_note_add", { film: id, ...p }); setMode("live"); setRange(null); load(); } catch (e: any) { say(e.message); } setBusy(null); }} />}
-              {editOn && <ElementOverlay boxes={boxes} E={E} sel={selEl} setSel={(x) => { setSelEl(x); if (x) { setSel2d(""); setMulti([]); setSide("props"); } else select([]); }} t={t} W={W} H={H} L={L} />}
+              {editOn && <ElementOverlay boxes={boxes.filter((b) => !E.edits[b.id]?.deleted)} E={E} sel={selEl} setSel={(x) => { setSelEl(x); if (x) { setSel2d(""); setMulti([]); setSide("props"); } else select([]); }} t={t} W={W} H={H} L={L} />}
               {editOn && <LayerOverlay L={L} t={t} sel={sel2d} setSel={(x) => { setSel2d(x); if (x) { setSelEl(""); setSide("props"); } }} multi={chosen} setMulti={setMulti} W={W} H={H} passThrough pathFor={pathFor} snap={snapOn} others={boxes} onMenu={(x, y, lid) => setMenu({ x, y, id: lid })} view={viewScale} />}
               {mode === "check" && <CheckLayer notes={toCheck} seek={seek} update={async (n: Json, p: Json) => { await tool("hub_note_update", { film: id, id: n.id, ...p }); load(); }} done={() => setMode("live")} />}
             </>
@@ -871,6 +878,14 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       <div className="dock">
         <FilmTimeline dur={DUR} fps={FPS} t={t} seek={(x: number) => { setPlaying(false); seek(x); }} scenes={scenes.length ? scenes : info.scenes || []} notes={notes} range={range} setRange={setRange} changed={latest?.changedRanges || []} chunkSec={info.chunk_frames / FPS} lanes={lanes}
           playing={playing} snapOn={snapOn} setSnapOn={setSnapOn} open={pane.tl} setOpen={() => flip("tl")}
+          groupActs={{
+            elements: (() => { const ids = reg.filter((r) => !E.edits[r.id]?.deleted).map((r) => r.id); const hidden = ids.length > 0 && ids.every((x) => E.edits[x]?.hidden);
+              return { hidden, eye: () => E.update({ ...E.edits, ...Object.fromEntries(ids.map((x) => [x, { ...(E.edits[x] || {}), hidden: !hidden }])) }),
+                trash: () => { if (hidden && !window.confirm(tx("Delete all {0} elements? They leave the picture and the lists; the code is not touched, and Layers › Deleted brings them back.", ids.length))) return; E.update(hideThenDeleteEls(E.edits, ids).edits); } }; })(),
+            layers: (() => { const ids = L.items.map((x) => x.id); const hidden = ids.length > 0 && L.items.every((x) => x.hidden);
+              return { hidden, eye: () => L.update(L.items.map((x) => ({ ...x, hidden: !hidden || undefined }))),
+                trash: () => { if (hidden && !window.confirm(tx("Delete all {0} layers? (Ctrl+Z brings them back)", ids.length))) return; const r = hideThenRemove(L.items, ids); L.update(r.items); if (r.removed) select([]); } }; })(),
+          }}
           tools={<>
             <button className="btn sm ghost" title={tx("Split the selected layer at the playhead (S)")} disabled={!one || t <= one.t0 || t >= one.t1} onClick={() => { const r = split(L.items, one!.id, t); if (r.id) { L.update(r.items); select([r.id]); } }}><Scissors />{tx("Split")}</button>
             <button className="btn sm ghost" title="Alt+[" disabled={!chosen.length} onClick={() => L.update(trim(L.items, chosen, t, "start"))}>{tx("Start here")}</button>
@@ -1350,7 +1365,7 @@ function VersionPlayer({ v, onTime, close, note }: Json) {
 const HEAD = 148;
 /** The film's timeline: ruler, render chunks, scenes, notes and one lane per layer, grouped and foldable.
  *  Ctrl + wheel zooms around the pointer, Shift + wheel (or a trackpad swipe) scrolls; bars snap. */
-function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, changed, chunkSec, lanes, playing, snapOn, setSnapOn, tools, open = true, setOpen }: Json) {
+function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, changed, chunkSec, lanes, playing, snapOn, setSnapOn, tools, open = true, setOpen, groupActs }: Json) {
   const box = useRef<HTMLDivElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(800);
@@ -1480,6 +1495,12 @@ function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, ch
             {rows.map((r) => r.kind === "group" ? (
               <button key={"g" + r.key} className="tl-g" style={{ top: r.y, height: r.h }} onMouseDown={(e) => e.stopPropagation()} onClick={() => setShut({ ...shut, [r.key]: !shut[r.key] })}>
                 <ChevronRight size={12} style={{ transform: shut[r.key] ? undefined : "rotate(90deg)", transition: "transform .12s", flex: "none" }} /><i style={{ background: r.color }} /><span>{r.label}</span><span className="muted">{r.n}</span>
+                {groupActs?.[r.key] && r.n ? (
+                  <span className="tl-g-b" onClick={(e) => e.stopPropagation()}>
+                    <span role="button" title={groupActs[r.key].hidden ? tx("Show them all") : tx("Hide them all")} onClick={groupActs[r.key].eye}>{groupActs[r.key].hidden ? <EyeOff size={12} /> : <Eye size={12} />}</span>
+                    <span role="button" className={groupActs[r.key].hidden ? "armed" : ""} title={groupActs[r.key].hidden ? tx("Delete them all") : tx("Hide them all (press again to delete)")} onClick={groupActs[r.key].trash}><Trash2 size={12} /></span>
+                  </span>
+                ) : null}
               </button>
             ) : (
               <div key={"h" + r.key} className={`tl-l ${r.lane!.items.some((i) => i.id === r.lane!.sel || r.lane!.selSet?.includes(i.id)) ? "on" : ""}`} style={{ top: r.y, height: r.h }} onMouseDown={(e) => { e.stopPropagation(); const it = r.lane!.items[0]; if (it && r.lane!.items.length === 1) r.lane!.onSelect?.(it.id, e); }} title={r.label}>{r.label}</div>

@@ -5,7 +5,7 @@ import { tx } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { Json, tool } from "./api";
 import { evalItem, Item } from "./Motion";
-import { copyItems, duplicate, group, hasClip, layerName, pasteItems, r2, remove, reorder, replace, setProp, shift, split, topOf, trim, uid, ungroup, withInside } from "./LayerOps";
+import { copyItems, duplicate, group, hasClip, hideThenRemove, layerName, pasteItems, r2, remove, reorder, replace, setProp, shift, split, topOf, trim, uid, ungroup, withInside } from "./LayerOps";
 import { groupsOf } from "./Motion";
 
 export { evalItem } from "./Motion";
@@ -349,7 +349,8 @@ export function useLayerKeys({ L, t, sel, setSel, multi, setMulti, active, say }
         else { const r = group(items, ids, t); if (r.id) { L.update(r.items); choose([r.id]); } }
         return;
       }
-      if (e.key === "Delete" || e.key === "Backspace") { done(); L.update(remove(items, ids)); choose([]); }
+      // the first press hides, a press on what is already hidden deletes
+      if (e.key === "Delete" || e.key === "Backspace") { done(); const r = hideThenRemove(items, ids); L.update(r.items); if (r.removed) choose([]); else say?.(tx("Hidden: press Delete again to delete")); }
       else if (e.key === "Escape") { done(); choose([]); }
       else if (mod && k === "d") { done(); const r = duplicate(items, ids); L.update(r.items); choose(r.ids); }
       else if (mod && k === "c") { done(); copyItems(picked, items); say?.(tx("{0} layers copied", picked.length)); }

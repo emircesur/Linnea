@@ -1191,4 +1191,16 @@ export const TR: Record<string, string> = {
   "Some drawings are not in this list: the film's code draws them outside its elements, so they cannot be selected or moved. They are marked in red on the frame at these seconds:": "Bazı çizimler bu listede yok: filmin kodu onları öğelerinin dışında çiziyor, bu yüzden seçilemiyor ve taşınamıyorlar. Şu saniyelerde karede kırmızıyla işaretli:",
   "Make them editable with the assistant": "Asistanla düzenlenebilir yap",
   "Copy for Claude": "Claude için kopyala",
+  // hide, then delete
+  "Hidden: press Delete again to delete": "Gizlendi: silmek için Delete'e tekrar basın",
+  "Delete all {0} elements? They leave the picture and the lists; the code is not touched, and Layers › Deleted brings them back.": "{0} öğenin hepsi silinsin mi? Resimden ve listelerden çıkarlar; koda dokunulmaz, Katmanlar › Silinenler'den geri getirilebilirler.",
+  "Delete all {0} layers? (Ctrl+Z brings them back)": "{0} katmanın hepsi silinsin mi? (Ctrl+Z geri getirir)",
+  "Show them all": "Hepsini göster",
+  "Hide them all": "Hepsini gizle",
+  "Delete them all": "Hepsini sil",
+  "Hide them all (press again to delete)": "Hepsini gizle (silmek için tekrar basın)",
+  "Hide (press again to delete)": "Gizle (silmek için tekrar basın)",
+  "Bring all back": "Hepsini geri getir",
+  "Bring back": "Geri getir",
+  "Deleted": "Silinenler",
 };

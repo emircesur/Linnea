@@ -55,6 +55,22 @@ export function duplicate(items: Item[], ids: string[], dx = 24, dy = 24): { ite
   return { items: out, ids: made };
 }
 
+/** Hide first, delete on the second press: visible layers among ids are hidden; when all are hidden already,
+ *  they go (with what is in them, for groups). */
+export function hideThenRemove(items: Item[], ids: string[]): { items: Item[]; removed: boolean } {
+  const picked = items.filter((x) => ids.includes(x.id));
+  if (picked.some((x) => !x.hidden)) return { items: replace(items, ids, (x) => ({ ...x, hidden: true })), removed: false };
+  return { items: remove(items, ids), removed: true };
+}
+/** The same for the film's own elements: hidden first, then deleted (they stay out of the lists and the
+ *  picture; the code is not touched, so a deleted one can come back from the list of deleted elements). */
+export function hideThenDeleteEls(edits: Json, ids: string[]): { edits: Json; deleted: boolean } {
+  const next: Json = { ...edits };
+  const visible = ids.filter((id) => !edits[id]?.hidden);
+  for (const id of visible.length ? visible : ids) next[id] = { ...(next[id] || {}), hidden: true, ...(visible.length ? {} : { deleted: true }) };
+  return { edits: next, deleted: !visible.length };
+}
+
 export function remove(items: Item[], ids: string[]): Item[] {
   ids = withInside(items, ids);
   return items.filter((x) => !ids.includes(x.id)).map((x) => (x.parent && ids.includes(x.parent) ? { ...x, parent: undefined } : x));

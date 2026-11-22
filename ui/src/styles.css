@@ -500,3 +500,15 @@ button.lrow:hover { background: var(--hover); color: var(--text); }
 .prail-b svg { width: 17px; height: 17px; }
 .prail-n { position: absolute; right: 1px; top: 1px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; background: var(--accent); color: var(--on-accent); font: 600 9px/14px var(--mono); }
 .prail-sep { width: 20px; height: 1px; background: var(--line); margin: 2px 0; }
+
+/* hide, then delete: rows and group headers */
+.stack-g-b { display: inline-flex; gap: 0; text-transform: none; letter-spacing: 0; }
+.stack-g-b .lrow-b { opacity: 0.7; }
+.stack-g:hover .stack-g-b .lrow-b { opacity: 1; }
+.lrow-b.del:hover { color: var(--bad); }
+.lrow-b.armed { opacity: 1; color: var(--bad); }
+.tl-g-b { display: inline-flex; gap: 2px; margin-left: 4px; }
+.tl-g-b > span { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; color: var(--text-3); opacity: 0; }
+.tl-g:hover .tl-g-b > span, .tl-g-b > span.armed { opacity: 1; }
+.tl-g-b > span:hover { background: var(--hover); color: var(--text); }
+.tl-g-b > span.armed { color: var(--bad); }
