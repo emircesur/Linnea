@@ -23,6 +23,8 @@ fn quiet(cmd: &mut Command) -> &mut Command {
 static SILENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// `--update`: started by the app's own updater. Silent, and the app starts again at the end.
 static UPDATE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// `--wait=<pid>`: the app that started the update; it closes itself, and the files are replaced once it has.
+static WAIT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 fn log(msg: &str) {
     use std::io::Write;
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(std::env::temp_dir().join("linnea-setup.log")) {
@@ -154,11 +156,114 @@ fn shortcuts_all() -> Vec<PathBuf> {
     v
 }
 
+const EXES: [&str; 4] = ["linnea-app.exe", "linnea.exe", "kesit-app.exe", "kesit.exe"];
+fn tasklist(filter: &str) -> String {
+    quiet(Command::new("tasklist").args(["/FI", filter, "/NH", "/FO", "CSV"])).output().map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase()).unwrap_or_default()
+}
+fn pid_alive(pid: u32) -> bool {
+    pid > 0 && tasklist(&format!("PID eq {pid}")).contains(&format!("\"{pid}\""))
+}
+fn any_running() -> bool {
+    EXES.iter().any(|e| tasklist(&format!("IMAGENAME eq {e}")).contains(e))
+}
+fn sleep_ms(ms: u64) {
+    std::thread::sleep(std::time::Duration::from_millis(ms));
+}
+/// The app that started an update closes itself: wait for it (up to 20 s) before anything is replaced.
+fn wait_for_app() {
+    let pid = WAIT.load(std::sync::atomic::Ordering::Relaxed);
+    if pid == 0 {
+        return;
+    }
+    for _ in 0..80 {
+        if !pid_alive(pid) {
+            log(&format!("app {pid} has closed"));
+            return;
+        }
+        sleep_ms(250);
+    }
+    log(&format!("app {pid} is still running after 20 s"));
+}
+/// Stop every Linnea program, and the web view processes of its window, and wait until they are really gone:
+/// a program that was just killed can hold its files for a moment, and replacing them then fails.
 fn stop_running() {
-    for exe in ["linnea-app.exe", "linnea.exe", "kesit-app.exe", "kesit.exe"] {
+    for exe in EXES {
         let _ = quiet(Command::new("taskkill").args(["/F", "/IM", exe])).output();
     }
-    std::thread::sleep(std::time::Duration::from_millis(600));
+    ps("Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | Where-Object { $_.CommandLine -match 'linnea' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }");
+    for _ in 0..40 {
+        if !any_running() {
+            break;
+        }
+        sleep_ms(250);
+    }
+    sleep_ms(500);
+}
+/// A file that cannot be deleted (still open somewhere) can still be renamed: move it out of the way.
+fn set_aside(p: &Path) {
+    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    for n in 0..50 {
+        let q = p.with_file_name(format!("{name}.old{n}"));
+        if !q.exists() {
+            if let Err(e) = std::fs::rename(p, &q) {
+                log(&format!("could not move {} aside: {e}", p.display()));
+            }
+            return;
+        }
+    }
+}
+/// Empty a program folder, keeping the window's browser profile (`*.WebView2`: what the app remembers).
+fn clear_program_dir(d: &Path) {
+    let Ok(rd) = std::fs::read_dir(d) else { return };
+    for e in rd.flatten() {
+        let p = e.path();
+        if e.file_name().to_string_lossy().to_lowercase().ends_with(".webview2") {
+            continue;
+        }
+        if p.is_dir() {
+            if std::fs::remove_dir_all(&p).is_err() {
+                clear_program_dir(&p);
+            }
+        } else if std::fs::remove_file(&p).is_err() {
+            set_aside(&p);
+        }
+    }
+}
+/// The program files, written one by one: a file that is still held is moved aside and written anew.
+fn unpack(dir: &Path) -> Result<(), String> {
+    let mut zip = zip::ZipArchive::new(Cursor::new(PAYLOAD)).map_err(|e| format!("{}: {e}", l("the package could not be read", "paket okunamadı")))?;
+    for i in 0..zip.len() {
+        let mut f = zip.by_index(i).map_err(|e| e.to_string())?;
+        let Some(rel) = f.enclosed_name() else { continue };
+        let out = dir.join(rel);
+        if f.is_dir() {
+            std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+            continue;
+        }
+        if let Some(p) = out.parent() {
+            std::fs::create_dir_all(p).map_err(|e| format!("{}: {e}", p.display()))?;
+        }
+        if out.exists() && std::fs::remove_file(&out).is_err() {
+            set_aside(&out);
+        }
+        let mut w = std::fs::File::create(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+        std::io::copy(&mut f, &mut w).map_err(|e| format!("{}: {e}", out.display()))?;
+    }
+    Ok(())
+}
+/// Leftovers moved aside by an earlier install, once nothing holds them any more.
+fn sweep_old(d: &Path) {
+    let Ok(rd) = std::fs::read_dir(d) else { return };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            if !e.file_name().to_string_lossy().to_lowercase().ends_with(".webview2") {
+                sweep_old(&p);
+            }
+        } else if e.file_name().to_string_lossy().contains(".old") && e.file_name().to_string_lossy().rsplit(".old").next().map(|n| n.chars().all(|c| c.is_ascii_digit())).unwrap_or(false) {
+            let _ = std::fs::remove_file(&p);
+        }
+    }
 }
 
 /// Claude Code's command, if it is on this computer.
@@ -202,15 +307,38 @@ fn install() -> Result<(), String> {
     if !ask("install", &format!("{b} {}", l("setup", "kurulumu")), &text) {
         return Ok(());
     }
+    wait_for_app();
     stop_running();
     remove_old_install();
-    // Remove the old program files, keep nothing of the user's (their work lives in Videos\Linnea and AppData).
-    for sub in ["bin", "library", "ui", "skill"] {
-        let _ = std::fs::remove_dir_all(dir.join(sub));
-    }
     std::fs::create_dir_all(&dir).map_err(|e| format!("{} {}: {e}", dir.display(), l("could not be created", "oluşturulamadı")))?;
-    let mut zip = zip::ZipArchive::new(Cursor::new(PAYLOAD)).map_err(|e| format!("{}: {e}", l("the package could not be read", "paket okunamadı")))?;
-    zip.extract(&dir).map_err(|e| format!("{}: {e}", l("the files could not be unpacked", "dosyalar açılamadı")))?;
+    // Replace the program files (the user's work lives in Videos\Linnea and AppData, and the window's browser
+    // profile is kept). A file something still holds is moved aside; a failed round stops Linnea again and
+    // tries once more, five times in all.
+    let mut last = String::new();
+    let mut done = false;
+    for round in 0..5 {
+        for sub in ["bin", "library", "ui", "skill"] {
+            clear_program_dir(&dir.join(sub));
+        }
+        match unpack(&dir) {
+            Ok(()) => {
+                done = true;
+                break;
+            }
+            Err(e) => {
+                log(&format!("unpacking, round {round}: {e}"));
+                last = e;
+                stop_running();
+                sleep_ms(1000);
+            }
+        }
+    }
+    if !done {
+        return Err(format!("{}: {last}", l("the files could not be unpacked", "dosyalar açılamadı")));
+    }
+    for sub in ["bin", "library", "ui", "skill"] {
+        sweep_old(&dir.join(sub));
+    }
     let me = std::env::current_exe().map_err(|e| e.to_string())?;
     let setup = dir.join("Linnea-Setup.exe");
     if me != setup {
@@ -272,7 +400,7 @@ fn install() -> Result<(), String> {
         if let Some(sk) = dirs::home_dir().map(|h| h.join(".claude").join("skills").join("linnea")).filter(|d| d.is_dir()) {
             let _ = std::fs::copy(dir.join("skill").join("linnea").join("SKILL.md"), sk.join("SKILL.md"));
         }
-        let _ = Command::new(&app).current_dir(&dir).spawn();
+        start_app(&app, &dir);
         return Ok(());
     }
     if ask(
@@ -284,9 +412,24 @@ fn install() -> Result<(), String> {
             format!("{b} {VERSION} is installed.{mcp}\n\nOn first start, Settings > Tools > \"Download missing\" fetches ffmpeg, yt-dlp, whisper and the models (about 2.5 GB).\n\nOpen {b} now?")
         },
     ) {
-        let _ = Command::new(&app).current_dir(&dir).spawn();
+        start_app(&app, &dir);
     }
     Ok(())
+}
+
+/// Start the app once, on its own (not a child that goes when this installer ends).
+fn start_app(app: &Path, dir: &Path) {
+    let mut c = Command::new(app);
+    c.current_dir(dir);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0000_0008 | 0x0000_0200);
+    }
+    match c.spawn() {
+        Ok(_) => log("app started"),
+        Err(e) => log(&format!("the app could not be started: {e}")),
+    }
 }
 
 fn walk_size(p: &Path) -> u64 {
@@ -327,6 +470,10 @@ fn main() {
     std::panic::set_hook(Box::new(|i| log(&format!("panic: {i}"))));
     let update = std::env::args().any(|a| a == "--update");
     UPDATE.store(update, std::sync::atomic::Ordering::Relaxed);
+    if let Some(pid) = std::env::args().find_map(|a| a.strip_prefix("--wait=").and_then(|p| p.parse::<u32>().ok())) {
+        WAIT.store(pid, std::sync::atomic::Ordering::Relaxed);
+    }
+    log(&format!("Linnea-Setup {VERSION} {:?}", std::env::args().skip(1).collect::<Vec<_>>()));
     SILENT.store(update || std::env::args().any(|a| a == "--silent" || a == "/S"), std::sync::atomic::Ordering::Relaxed);
     let un = std::env::args().any(|a| a == "--uninstall" || a == "/uninstall");
     let r = if un {
@@ -336,7 +483,20 @@ fn main() {
         install()
     };
     if let Err(e) = r {
-        tell(&format!("{}\n{e}", l("The installation could not finish:", "Kurulum tamamlanamadı:")), true);
+        if update {
+            // an update the person started from the app: say what went wrong (it is not silent any more), and
+            // bring Linnea back as it is
+            SILENT.store(false, std::sync::atomic::Ordering::Relaxed);
+            let log_file = std::env::temp_dir().join("linnea-setup.log");
+            tell(&format!("{}\n{e}\n\n{}\n{}", l("The update could not finish:", "Güncelleme tamamlanamadı:"), l("Details:", "Ayrıntılar:"), log_file.display()), true);
+            let dir = install_dir();
+            let app = dir.join("bin").join("linnea-app.exe");
+            if app.is_file() {
+                start_app(&app, &dir);
+            }
+        } else {
+            tell(&format!("{}\n{e}", l("The installation could not finish:", "Kurulum tamamlanamadı:")), true);
+        }
         std::process::exit(1);
     }
 }

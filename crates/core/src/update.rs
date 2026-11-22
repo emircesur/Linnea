@@ -1,6 +1,6 @@
 //! Updating Linnea from its GitHub releases. `app_update` looks for a newer release (at most every few
-//! hours unless asked) and installs it: on Windows the new Linnea-Setup.exe runs silently and starts the app
-//! again, on Linux the archive's install.sh replaces the program, on macOS the disk image opens for the
+//! hours unless asked) and installs it: on Windows the new Linnea-Setup.exe runs silently, waits for this app to
+//! close itself, and starts it again, on Linux the archive's install.sh replaces the program, on macOS the disk image opens for the
 //! drag to Applications. The user's films, projects and settings are never touched.
 use crate::config::{config_dir, data_dir};
 use crate::tools::{Ctx, Tool};
@@ -86,8 +86,21 @@ fn install(c: &Ctx) -> Result<Value> {
     c.rep.p(1.0, "starting the installer");
     #[cfg(windows)]
     {
-        // the installer stops this app, replaces the program files and starts it again
-        std::process::Command::new(&file).args(["--silent", "--update"]).spawn()?;
+        use std::os::windows::process::CommandExt;
+        // The installer waits for this app to be gone, replaces the program files and starts it again. It runs
+        // detached, in its own process group and outside any job this app was started in, so it outlives the app.
+        let pid = std::process::id();
+        let spawn = |flags: u32| std::process::Command::new(&file).args(["--silent", "--update", &format!("--wait={pid}")]).creation_flags(flags).spawn();
+        const DETACHED: u32 = 0x0000_0008;
+        const NEW_GROUP: u32 = 0x0000_0200;
+        const BREAKAWAY: u32 = 0x0100_0000;
+        spawn(DETACHED | NEW_GROUP | BREAKAWAY).or_else(|_| spawn(DETACHED | NEW_GROUP))?;
+        // The app steps aside by itself once the window has had the answer, so no file the installer replaces is
+        // still held by a running Linnea (killing it mid-way is what left half-replaced program folders).
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            std::process::exit(0);
+        });
         return Ok(json!({"installed": true, "restarting": true, "version": info["latest"]}));
     }
     #[cfg(target_os = "macos")]
