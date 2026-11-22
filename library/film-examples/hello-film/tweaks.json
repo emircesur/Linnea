@@ -1,0 +1,6 @@
+{
+ "puppets": { "stickman": "rppet", "confetti": "rppet" },
+ "items2d": [
+  { "id": "progress", "kind": "progress", "label": "Progress bar", "t0": 0, "t1": 10, "x": 80, "y": 1840, "w": 920, "h": 14, "value": 1, "color": "#e7a6b6", "bg": "rgba(255,255,255,0.18)", "reveal": 10, "fade": 0, "opacity": 1 }
+ ]
+}

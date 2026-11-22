@@ -24,6 +24,9 @@ tokens, for a change you could have made with your mouse in a second.
 
 - **Edit by hand what Claude made.** Every title, card, character and object the film draws is a box you
   can click. Drag it, resize it, turn it, retype it, recolour it, retime it, keyframe it. No prompt, no tokens.
+  Linnea checks that Claude really drew everything as an element: anything left outside the Layers panel is
+  marked in red on the frame, Claude is told to fix it before it calls the film done, and one click asks the
+  assistant to do it.
 - **Your edits survive Claude's rewrites.** They live next to the code, not in it, so when Claude changes
   the film for you, your hand edits stay where you put them.
 - **Prompt only for what needs a mind.** Leave a note on a frame, draw a circle on it, and Claude reads the

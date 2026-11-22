@@ -772,6 +772,13 @@ pub fn new_film(cfg: &Config, a: &Value) -> Result<Value> {
             bail!("no example '{example}'");
         }
         copy_dir(&src, &dir)?;
+        // the engine that makes every element editable, and what the app needs to know about the film
+        crate::layers::copy_if_changed(&library_dir().join("film-hooks").join("linnea2d.js"), &dir.join("linnea2d.js"))?;
+        let ex = read_json_or(&src.join("example.json"), json!({}));
+        let (ew, eh, efps, edur) = (jfd(&ex, "width", 1080.0), jfd(&ex, "height", 1920.0), jfd(&ex, "fps", 30.0), jfd(&ex, "dur", 10.0));
+        let pj = json!({"title": title, "status": "in-progress", "live": {"page": "index.html", "fps": efps, "dur": edur, "width": ew, "height": eh}, "render": {"env": {"DUR": format!("{edur}")}}});
+        write_json(&dir.join(".videohub").join("project.json"), &pj)?;
+        let _ = std::fs::remove_file(dir.join("example.json"));
     } else {
         copy_dir(&library_dir().join("film-template"), &dir)?;
         // the title lands in an HTML <title>, a // comment and a '...' string: each wants its own escaping
@@ -790,7 +797,16 @@ pub fn new_film(cfg: &Config, a: &Value) -> Result<Value> {
     }
     let films = scan(cfg);
     let f = films.into_iter().find(|f| f.dir == dir).ok_or_else(|| anyhow!("the new film was not found after creating it"))?;
-    Ok(json!({"film": f.id, "dir": fwd(&f.dir), "files": ["index.html", "film.js"], "next": "edit film.js (window.renderOut(t) draws second t), then hub_live to check it and show it to the user"}))
+    // an example's puppets come from the library, linked like any film's (so library updates reach them)
+    if !example.is_empty() {
+        let tw = read_json_or(&dir.join("tweaks.json"), json!({}));
+        for name in tw["puppets"].as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default() {
+            if let Err(e) = crate::puppets::link_into(cfg, &f.id, &name) {
+                eprintln!("example puppet {name}: {e}");
+            }
+        }
+    }
+    Ok(json!({"film": f.id, "dir": fwd(&f.dir), "files": ["index.html", "film.js"], "next": "edit film.js (window.renderOut(t) draws second t): draw every visible thing inside its own el() with an English id and label (anything outside el() is missing from the app's Layers panel), then hub_live to check it (it lists drawings outside el() under checks.not_editable) and show it to the user"}))
 }
 
 // ---------- tools ----------
@@ -873,6 +889,21 @@ fn t_live(c: &Ctx, a: &Value) -> Result<Value> {
                     }
                 }
                 checks["render_errors"] = json!(bad);
+                // Everything on screen has to be an element the person can select in Linnea's Layers: paint
+                // that no el() / KE call owns is listed with where it is, at nine seconds across the film.
+                let times: Vec<f64> = (0..9).map(|k| ((dur * (k as f64 + 0.5) / 9.0) * 100.0).round() / 100.0).collect();
+                let audit = p.eval(&format!("(async () => window.KE_AUDIT ? await window.KE_AUDIT({}) : null)()", json!(times))).unwrap_or(Value::Null);
+                if !audit.is_null() {
+                    checks["elements"] = audit["elements"].clone();
+                    let loose: Vec<Value> = ja(&audit, "frames").iter().filter(|f| !ja(f, "loose").is_empty()).cloned().collect();
+                    if !loose.is_empty() {
+                        checks["not_editable"] = json!({
+                            "frames": loose,
+                            "boxes": "[x, y, w, h] in canvas px of paint no element owns; share = part of the frame they cover",
+                            "fix": "Draw each of these through el(id, t, {label, x, y, t0, t1, text, color}, (p, tt) => ...) (or KE.text / KE.puppet) with a stable, readable English id and label, so it shows in Linnea's Layers and on its timeline and the person can move, resize, re-type, recolour, hide and retime it. One element per thing a person would see as one thing (a character, a bird, a card, a drawing); backgrounds that fill the frame may stay as they are.",
+                        });
+                    }
+                }
             }
             checks["console_errors"] = json!(p.errors);
         }
@@ -897,8 +928,14 @@ fn t_live(c: &Ctx, a: &Value) -> Result<Value> {
     if !jb(&i, "dur_known").unwrap_or(false) {
         next.push(format!("the length is a guess ({} s): save it with hub_project set={{live:{{dur:N}}}}", jfd(&i, "dur", 0.0)));
     }
+    let not_editable = ja(&checks["not_editable"], "frames").len();
+    if checks["page"]["hook"] == json!(false) && checks["ready"] == json!(true) {
+        next.push("the page does not load linnea2d.js, so nothing in it can be selected or edited in Linnea: add it with hub_2d install=true, draw every element through el() / KE, then hub_live again".into());
+    }
     if checks["ready"] != json!(true) || !ja(&checks, "render_errors").is_empty() || !ja(&checks, "console_errors").is_empty() {
         next.push("fix the errors above, then call hub_live again".into());
+    } else if not_editable > 0 {
+        next.push(format!("NOT DONE YET: at {not_editable} of the checked seconds something is drawn outside every element (checks.not_editable). The person sees it in the preview but cannot find or edit it in Layers. Move each such drawing into its own el() with an English id and label, then call hub_live again until not_editable is gone"));
     } else {
         next.push("the user is watching it in Linnea now; stop here and wait for their notes (hub_notes)".into());
     }
@@ -1317,9 +1354,9 @@ const F: (&str, &str, &str) = ("film!", "string", "Film id, title or folder (see
 pub const TOOLS: &[Tool] = &[
     Tool { name: "hub_workspace", desc: "Where this PC keeps its video work: the workspace, the films folder (make every new film there, one folder per film) and the outputs folder (finished renders; never write there).", params: &[], long: false, app_only: false, run: t_workspace },
     Tool { name: "hub_films", desc: "List the films: title, size, length, open notes, versions.", params: &[], long: false, app_only: false, run: t_films },
-    Tool { name: "hub_new_film", desc: "Start a new film written as code from the template: index.html with a fixed-size canvas and film.js where window.renderOut(t) draws second t. Default 1080x1920, 30 fps, 10 s. example=hello-film copies VideoHub's example film instead.", params: &[("title!", "string", "Film title"), ("width", "number", "Width px"), ("height", "number", "Height px"), ("fps", "number", "Frames per second"), ("dur", "number", "Length in seconds"), ("example", "string", "hello-film")], long: false, app_only: false, run: t_new },
+    Tool { name: "hub_new_film", desc: "Start a new film written as code from the template: index.html with a fixed-size canvas and film.js where window.renderOut(t) draws second t. Default 1080x1920, 30 fps, 10 s. example=hello-film starts from Linnea's example film instead (every element editable, with puppets and a layer).", params: &[("title!", "string", "Film title"), ("width", "number", "Width px"), ("height", "number", "Height px"), ("fps", "number", "Frames per second"), ("dur", "number", "Length in seconds"), ("example", "string", "hello-film")], long: false, app_only: false, run: t_new },
     Tool { name: "hub_project", desc: "A film's contract as Linnea reads it (page, size, fps, length, sound, words, scenes, chunks), its versions and note counts. `set` merges into .videohub/project.json (title, status, live {page, fps, dur, width, height, audio}, render {env {DUR}, mux, workers}, transcript {file, offset}).", params: &[F, ("set", "object", "Keys to merge")], long: false, app_only: false, run: t_project },
-    Tool { name: "hub_live", desc: "Open the film in Linnea's live preview WITHOUT RENDERING: it plays from its code, the user watches and leaves notes, and the preview reloads itself when the code changes. First it loads the page headless and reports problems: READY never set, renderOut missing or throwing, console errors, the canvas size. Call it as soon as a new film (or a big change) plays, then stop and wait for the user's notes.", params: &[F, ("t", "number", "Second to show")], long: false, app_only: false, run: t_live },
+    Tool { name: "hub_live", desc: "Open the film in Linnea's live preview WITHOUT RENDERING: it plays from its code, the user watches and leaves notes, and the preview reloads itself when the code changes. First it loads the page headless and reports problems: READY never set, renderOut missing or throwing, console errors, the canvas size. Call it as soon as a new film (or a big change) plays, then stop and wait for the user's notes. It also lists anything drawn outside el() / KE (checks.not_editable): such drawings are not in the Layers panel, so fix them before stopping.", params: &[F, ("t", "number", "Second to show")], long: false, app_only: false, run: t_live },
     Tool { name: "hub_frame", desc: "Exact frames of the film as JPEGs, drawn by its own renderOut: `t` one second, `times` a list, or `from`/`to`/`step` a range (with a contact sheet). Use it to look at your work before handing it over, and after every fix.", params: &[F, ("t", "number", "Second"), ("times", "array", "Seconds"), ("from", "number", "Range start"), ("to", "number", "Range end"), ("step", "number", "Seconds between frames"), ("scale", "number", "0.25..1, default 1")], long: false, app_only: false, run: t_frame },
     Tool { name: "hub_notes", desc: "The notes the user left on frames in Linnea: time, frame, range, the chunks it touches, text, narration at that moment, and the pictures (images.crop = the drawing close up, images.annotated = the frame with the drawing, images.frame = the frame). Open the pictures with Read. Default: open notes (they are marked as with Claude).", params: &[F, ("status", "string", "open | fixed | done | all")], long: false, app_only: false, run: t_notes },
     Tool { name: "hub_note_update", desc: "Save a note's status and a short reply the user sees. After fixing: status \"fixed\" + reply. Others: open, wontfix, done.", params: &[F, ("id!", "string", "Note id"), ("status", "string", "fixed | open | wontfix | done"), ("reply", "string", "Short reply"), ("delete", "boolean", "Remove the note")], long: false, app_only: false, run: t_note_update },

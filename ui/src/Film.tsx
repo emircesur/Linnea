@@ -26,6 +26,8 @@ import { Shortcuts, Storyboard } from "./Storyboard";
 
 /** The elements found in each film's code (film id @ revision), so opening Layers again needs no new scan. */
 const REGISTRY = new Map<string, Reg[]>();
+/** What each film's code paints outside its elements (film id @ revision), found with the same scan. */
+const LOOSE = new Map<string, Json[]>();
 
 const STATUS: Record<string, string> = { open: tx("Open"), claude: "Claude'da", fixed: tx("Fixed"), still: tx("Still there"), done: tx("Done"), wontfix: tx("Won't fix") };
 const formats: [string, number, number][] = [["9:16", 1080, 1920], ["16:9", 1920, 1080], ["1:1", 1080, 1080], ["4:5", 1080, 1350]];
@@ -55,7 +57,7 @@ export function Films({ act, open, say }: { act: Activity; open: (id: string) =>
         <div className="page-head">
           <h1>{tx("Films")}</h1>
           <span className="grow" />
-          <button className="btn ghost" onClick={() => make({ title: "Hello film", example: "hello-film" })}>{tx("Example film")}</button>
+          <button className="btn ghost" onClick={() => make({ title: "Hello, Linnea", example: "hello-film" })}>{tx("Example film")}</button>
         </div>
         <div className="card" style={{ padding: 16, marginBottom: 24, display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 12, alignItems: "end" }}>
           <div className="field"><label>{tx("New film")}</label><input className="input" placeholder={tx("Title")} value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && title && len >= 0.5 && make({ title, width: formats[fmt][1], height: formats[fmt][2], dur: len })} /></div>
@@ -262,6 +264,8 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
   // The list of all elements comes from drawing the whole film once. That runs on a hidden copy of the page,
   // so the preview on screen never jumps through the film, and it is kept for the film's current code.
   const [scanning, setScanning] = useState(false);
+  // what the film paints outside every element, at nine seconds (from the same hidden page as the scan)
+  const [loose, setLoose] = useState<{ t: number; loose: number[][]; share: number }[]>([]);
   const scanFrame = useRef<HTMLIFrameElement>(null);
   const scanKey = `${id}@${rev}`;
   useEffect(() => {
@@ -269,7 +273,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
     const w = frame.current?.contentWindow as any;
     if (!w?.KE) return;
     const known = REGISTRY.get(scanKey);
-    if (known) setReg(known);
+    if (known) { setReg(known); setLoose(LOOSE.get(scanKey) || []); }
     else setScanning(true);
   }, [side, left, ready, rev]);
   const onScanLoad = () => {
@@ -290,7 +294,14 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
         REGISTRY.set(key, r);
         if (REGISTRY.size > 20) REGISTRY.delete(REGISTRY.keys().next().value!);
         setReg(r);
-        setScanning(false);
+        const d = info?.dur || 10;
+        const times = Array.from({ length: 9 }, (_, k) => Math.round(((d * (k + 0.5)) / 9) * 100) / 100);
+        Promise.resolve(w.KE_AUDIT ? w.KE_AUDIT(times) : null).catch(() => null).then((a: Json) => {
+          const found = ((a?.frames || []) as Json[]).filter((f) => f.loose?.length);
+          LOOSE.set(key, found);
+          if (alive()) setLoose(found);
+          setScanning(false);
+        });
       });
     };
     wait();
@@ -666,6 +677,13 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
 
   if (err) return <div className="page"><button className="btn ghost" onClick={back}><ArrowLeft />{tx("Films")}</button><p className="err" style={{ marginTop: 16 }}>{err}</p></div>;
   if (!info) return <div className="page"><span className="muted">{tx("Loading")}</span></div>;
+  const looseText = () => tx("In the film \"{0}\" ({1}) in Linnea, some drawings are made outside el(), so they show in the preview but not in the Layers panel (at {2} s). Move each into its own el(id, t, {label, x, y, t0, t1}, draw) with an English id and label, keep the existing ids and the user's edits, then hub_live until checks.not_editable is empty.", info.title, id, loose.map((f) => f.t).join(", "));
+  const copyLoose = () => copy(looseText(), tx("Message for Claude copied"));
+  const fixLoose = async () => {
+    setSide("ai");
+    const r = await run(tx("Assistant making the drawings editable"), "hub_ask", { prompt: looseText() });
+    if (r) say(tx("Done: the drawings are being scanned again"));
+  };
   const askEditable = () => navigator.clipboard.writeText(tx("Make the film \"{0}\" ({1}) in Linnea editable: draw every text and element on screen (title frames, caption boxes, characters, objects) with KE.text / KE.group so I can move and resize each as one piece in the app. Keep the current tweaks.json edits. Then hub_live.", info.title, id)).then(() => say(tx("Message for Claude copied")));
   return (
     <div className="ed film-ed" style={{ gridTemplateColumns: `${pane.l ? 288 : 44}px minmax(0, 1fr) ${pane.r ? 320 : 44}px` }}>
@@ -704,11 +722,11 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       </div>
 
       {!pane.l && (
-        <div className="ed-left rail">
-          <button className="rail-b" title={tx("Show the left panel")} onClick={() => flip("l")}><PanelLeftOpen /></button>
-          <span className="rail-sep" />
+        <div className="ed-left prail">
+          <button className="prail-b" title={tx("Show the left panel")} onClick={() => flip("l")}><PanelLeftOpen /></button>
+          <span className="prail-sep" />
           {([["layers", tx("Layers"), LayersIcon, L.items.length], ["add", tx("Add"), Plus, 0], ["notes", tx("Notes"), StickyNote, openNotes.length]] as const).map(([k, l, I, n]) => (
-            <button key={k} className={`rail-b ${left === k ? "on" : ""}`} title={l} onClick={() => { showLeft(k); if (k === "add") setPlaying(false); }}><I />{n ? <span className="rail-n">{n}</span> : null}</button>
+            <button key={k} className={`prail-b ${left === k ? "on" : ""}`} title={l} onClick={() => { showLeft(k); if (k === "add") setPlaying(false); }}><I />{n ? <span className="prail-n">{n}</span> : null}</button>
           ))}
         </div>
       )}
@@ -729,7 +747,8 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
           )}
           {left === "layers" && <LayerStack L={L} t={t} sel={sel2d} multi={chosen} select={select} seek={(x) => { setPlaying(false); seek(x); }} reg={reg} E={E} selEl={selEl} scanning={scanning}
             pickEl={(x, t0, t1) => { setSelEl(x); setSel2d(""); setMulti([]); setSide("props"); if (tRef.current < t0 || tRef.current >= t1) { setPlaying(false); seek(t0 + 0.05); } }}
-            onMenu={(x, y, lid) => setMenu({ x, y, id: lid })} onAdd={() => showLeft("add")} askClaude={askEditable} />}
+            onMenu={(x, y, lid) => setMenu({ x, y, id: lid })} onAdd={() => showLeft("add")} askClaude={askEditable}
+            loose={loose} onLoose={(x) => { setPlaying(false); seek(x); }} fixLoose={fixLoose} copyLoose={copyLoose} busy={!!busy} />}
           {left === "add" && <AddPanel L={L} t={t} W={W} H={H} dur={DUR} say={say} select={(ids) => { select(ids); }} addSound={addSound}
             scenes={<SceneGrid film={id} L={L} t={t} W={W} H={H} dur={DUR} say={say} select={(ids) => select(ids)} />}
             puppets={(dropRef: any) => <PuppetGrid film={id} L={L} t={t} W={W} H={H} dur={DUR} say={say} select={(ids) => select(ids)} dropRef={dropRef} makeFromImage={puppetFromImage} />} />}
@@ -745,6 +764,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
             <>
               <iframe ref={frame} key={rev} src={`${info.url}?r=${rev}`} onLoad={onLoad} style={{ width: W, height: H, border: 0, display: "block", background: "#000", pointerEvents: "none" }} title="film" />
               {guides && <FrameGuides W={W} H={H} kind={guides} />}
+              {editOn && (() => { const f = loose.find((x) => Math.abs(x.t - t) < 0.02); return f ? <LooseBoxes W={W} H={H} boxes={f.loose} /> : null; })()}
               {mode === "note" && <NoteLayer W={W} H={H} t={t} range={range} fps={FPS} cancel={() => setMode("live")} save={async (p: Json) => { setBusy({ label: tx("Saving the note"), p: 0.5 }); try { await tool("hub_note_add", { film: id, ...p }); setMode("live"); setRange(null); load(); } catch (e: any) { say(e.message); } setBusy(null); }} />}
               {editOn && <ElementOverlay boxes={boxes} E={E} sel={selEl} setSel={(x) => { setSelEl(x); if (x) { setSel2d(""); setMulti([]); setSide("props"); } else select([]); }} t={t} W={W} H={H} L={L} />}
               {editOn && <LayerOverlay L={L} t={t} sel={sel2d} setSel={(x) => { setSel2d(x); if (x) { setSelEl(""); setSide("props"); } }} multi={chosen} setMulti={setMulti} W={W} H={H} passThrough pathFor={pathFor} snap={snapOn} others={boxes} onMenu={(x, y, lid) => setMenu({ x, y, id: lid })} view={viewScale} />}
@@ -792,10 +812,10 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       </div>
 
       {!pane.r && (
-        <div className="ed-right rail">
-          <button className="rail-b" title={tx("Show the right panel")} onClick={() => flip("r")}><PanelRightOpen /></button>
-          <span className="rail-sep" />
-          {SIDE_TABS.map(([k, l, I]) => <button key={k} className={`rail-b ${side === k ? "on" : ""}`} title={l} onClick={() => showSide(k)}><I /></button>)}
+        <div className="ed-right prail">
+          <button className="prail-b" title={tx("Show the right panel")} onClick={() => flip("r")}><PanelRightOpen /></button>
+          <span className="prail-sep" />
+          {SIDE_TABS.map(([k, l, I]) => <button key={k} className={`prail-b ${side === k ? "on" : ""}`} title={l} onClick={() => showSide(k)}><I /></button>)}
         </div>
       )}
       <div className="ed-right" style={{ padding: 0, gap: 0, overflow: "hidden", display: pane.r ? undefined : "none" }}>
@@ -862,6 +882,16 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       {menu && <Menu x={menu.x} y={menu.y} items={layerOps(chosen.includes(menu.id) ? chosen : [menu.id])} close={() => setMenu(null)} />}
       {palette && <Palette commands={commands} close={() => setPalette(false)} />}
     </div>
+  );
+}
+
+/** Where the film paints outside every element, at an audited second: red, so it can be found. */
+function LooseBoxes({ W, H, boxes }: { W: number; H: number; boxes: number[][] }) {
+  const lw = Math.max(2, W / 400);
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+      {boxes.map((b, i) => <rect key={i} x={b[0]} y={b[1]} width={b[2]} height={b[3]} fill="rgba(229,72,77,0.12)" stroke="#e5484d" strokeWidth={lw} strokeDasharray={`${lw * 4} ${lw * 3}`} />)}
+    </svg>
   );
 }
 

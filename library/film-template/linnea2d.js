@@ -757,6 +757,75 @@
     P.fillText = auto(ft, true);
     P.strokeText = auto(st, false);
   })();
+
+  // ---- the editability check (hub_live and the app run it) ----
+  // KE_AUDIT(times) draws those seconds and returns, for each, the boxes of paint no element owns: shapes,
+  // lines and pictures drawn outside el() / KE.group / KE.text / KE.puppet, which the person cannot select in
+  // Linnea's Layers. Text needs no element (it becomes one by itself), and a fill over most of the frame is a
+  // background, so neither counts. The film's context is watched only while the check runs.
+  window.KE_AUDIT = async function (times) {
+    const cv = target();
+    if (!cv || typeof window.renderOut !== 'function') return null;
+    const g0 = cv.getContext('2d'), W = cv.width, H = cv.height, area = W * H;
+    const box = () => ({ x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity });
+    let path = box(), loose = [];
+    const add = acc => {
+      if (!isFinite(acc.x0)) return;
+      const x0 = Math.max(0, acc.x0), y0 = Math.max(0, acc.y0), x1 = Math.min(W, acc.x1), y1 = Math.min(H, acc.y1);
+      if (x1 - x0 < 1 && y1 - y0 < 1) return;
+      if ((x1 - x0) * (y1 - y0) > area * 0.8) return;
+      loose.push([x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)]);
+    };
+    const pts = (g, list) => { for (let i = 0; i + 1 < list.length; i += 2) devBox(g, list[i], list[i + 1], 0, 0, path); };
+    const spy = {
+      beginPath: () => { path = box(); },
+      rect: (g, [x, y, w, h]) => devBox(g, x, y, w, h, path),
+      roundRect: (g, [x, y, w, h]) => devBox(g, x, y, w, h, path),
+      arc: (g, [x, y, r]) => devBox(g, x - r, y - r, 2 * r, 2 * r, path),
+      ellipse: (g, [x, y, rx, ry]) => devBox(g, x - rx, y - ry, 2 * rx, 2 * ry, path),
+      moveTo: (g, a) => pts(g, a), lineTo: (g, a) => pts(g, a), quadraticCurveTo: (g, a) => pts(g, a), bezierCurveTo: (g, a) => pts(g, a), arcTo: (g, a) => pts(g, [a[0], a[1], a[2], a[3]]),
+      fill: (g, a) => { if (!a.length || typeof a[0] === 'string') add(path); },
+      stroke: (g, a) => { if (!a.length) add(path); },
+      fillRect: (g, [x, y, w, h]) => { const b = box(); devBox(g, x, y, w, h, b); add(b); },
+      strokeRect: (g, [x, y, w, h]) => { const b = box(); devBox(g, x, y, w, h, b); add(b); },
+      drawImage: (g, a) => {
+        const im = a[0], b = box();
+        if (a.length >= 9) devBox(g, a[5], a[6], a[7], a[8], b);
+        else if (a.length >= 5) devBox(g, a[1], a[2], a[3], a[4], b);
+        else devBox(g, a[1], a[2], im.naturalWidth || im.videoWidth || im.width || 0, im.naturalHeight || im.videoHeight || im.height || 0, b);
+        add(b);
+      },
+    };
+    // on the context itself: KE.group puts the methods it measures back as its own, which would hide a spy
+    // on the prototype
+    const own = {};
+    for (const [n, f] of Object.entries(spy)) {
+      own[n] = Object.getOwnPropertyDescriptor(g0, n);
+      const orig = g0[n];
+      g0[n] = function () { if (!inGroup) { try { f(this, arguments); } catch (e) { /* only a measurement */ } } return orig.apply(this, arguments); };
+    }
+    const frames = [], ids = new Set();
+    try {
+      for (const t of times || []) {
+        loose = [];
+        try { const r = window.renderOut(t); if (r && r.then) await r; } catch (e) { continue; }
+        BOXES.forEach(b => ids.add(b.id));
+        // overlapping boxes become one; specks left alone
+        const merged = [];
+        for (const b of loose.sort((p, q) => q[2] * q[3] - p[2] * p[3])) {
+          const m = merged.find(c => b[0] < c[0] + c[2] + 8 && c[0] < b[0] + b[2] + 8 && b[1] < c[1] + c[3] + 8 && c[1] < b[1] + b[3] + 8);
+          if (m) { const x1 = Math.max(m[0] + m[2], b[0] + b[2]), y1 = Math.max(m[1] + m[3], b[1] + b[3]); m[0] = Math.min(m[0], b[0]); m[1] = Math.min(m[1], b[1]); m[2] = x1 - m[0]; m[3] = y1 - m[1]; }
+          else merged.push(b.slice());
+        }
+        const keep = merged.filter(b => b[2] * b[3] <= area * 0.8 && (b[2] * b[3] >= area * 0.0004 || Math.max(b[2], b[3]) >= 24)).slice(0, 12).map(b => b.map(Math.round));
+        const share = keep.reduce((n, b) => n + b[2] * b[3], 0) / area;
+        frames.push({ t: Math.round(t * 100) / 100, loose: keep, share: Math.round(Math.min(1, share) * 1000) / 1000 });
+      }
+    } finally {
+      for (const n of Object.keys(spy)) { if (own[n]) Object.defineProperty(g0, n, own[n]); else delete g0[n]; }
+    }
+    return { W, H, elements: ids.size, frames };
+  };
   let curT = 0;
 
   let wrapped = null, latest = null;

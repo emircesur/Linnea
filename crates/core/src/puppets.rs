@@ -259,6 +259,12 @@ fn link(c: &Ctx, a: &Value, name: &str, force: bool) -> Result<Value> {
     }))
 }
 
+/// Link a library puppet into a film from code that has the settings but no tool call (a new example film).
+pub fn link_into(cfg: &crate::config::Config, film: &str, name: &str) -> Result<Value> {
+    let c = Ctx { cfg: cfg.clone(), origin: "app".into(), rep: crate::proc::Rep::none() };
+    link(&c, &json!({"film": film}), name, true)
+}
+
 fn t_link(c: &Ctx, a: &Value) -> Result<Value> {
     let name = clean(js(a, "name").unwrap_or(""))?;
     link(c, a, &name, jb(a, "force") == Some(true))

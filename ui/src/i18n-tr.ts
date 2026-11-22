@@ -1184,4 +1184,11 @@ export const TR: Record<string, string> = {
   "Hide the timeline (Ctrl+Shift+\\)": "Zaman çizelgesini gizle (Ctrl+Shift+\\)",
   "Show the timeline (Ctrl+Shift+\\)": "Zaman çizelgesini göster (Ctrl+Shift+\\)",
   "Hide / show the timeline": "Zaman çizelgesini gizle / göster",
+  // drawings outside the film's elements
+  "In the film \"{0}\" ({1}) in Linnea, some drawings are made outside el(), so they show in the preview but not in the Layers panel (at {2} s). Move each into its own el(id, t, {label, x, y, t0, t1}, draw) with an English id and label, keep the existing ids and the user's edits, then hub_live until checks.not_editable is empty.": "Linnea'daki \"{0}\" ({1}) filminde bazı çizimler el() dışında yapılmış; önizlemede görünüyorlar ama Katmanlar panelinde yoklar ({2}. saniyelerde). Her birini İngilizce id ve label ile kendi el(id, t, {label, x, y, t0, t1}, draw) çağrısına taşı, mevcut id'leri ve kullanıcının düzenlemelerini koru, sonra checks.not_editable boşalana kadar hub_live çalıştır.",
+  "Assistant making the drawings editable": "Asistan çizimleri düzenlenebilir yapıyor",
+  "Done: the drawings are being scanned again": "Bitti: çizimler yeniden taranıyor",
+  "Some drawings are not in this list: the film's code draws them outside its elements, so they cannot be selected or moved. They are marked in red on the frame at these seconds:": "Bazı çizimler bu listede yok: filmin kodu onları öğelerinin dışında çiziyor, bu yüzden seçilemiyor ve taşınamıyorlar. Şu saniyelerde karede kırmızıyla işaretli:",
+  "Make them editable with the assistant": "Asistanla düzenlenebilir yap",
+  "Copy for Claude": "Claude için kopyala",
 };

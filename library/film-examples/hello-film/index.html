@@ -2,15 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Hello, VideoHub</title>
+<title>Hello, Linnea</title>
 <style>
-  html, body { margin: 0; background: #000; overflow: hidden; }
-  /* the canvas keeps its fixed size (1920x1080); the page only scales it to fit when you open it in a browser */
-  canvas { display: block; width: 100vw; height: 56.25vw; max-height: 100vh; max-width: 177.78vh; margin: auto; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  /* the canvas keeps its fixed size (1080x1920); CSS only scales it to fit the window */
+  canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
 </style>
 </head>
 <body>
-<canvas id="c" width="1920" height="1080"></canvas>
+<canvas id="c" width="1080" height="1920"></canvas>
 <script src="film.js"></script>
+<script src="linnea2d.js"></script>
 </body>
 </html>

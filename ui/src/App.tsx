@@ -69,7 +69,7 @@ export function App() {
       <aside className="rail">
         <div className="mark" title={BRAND}>
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 21V10.5M12 10.5C10.5 5.5 6.5 5 6.5 9.5M12 10.5c1.5-5 5.5-5.5 5.5-1" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M12 21V10.5M12 10.5C10.5 5.5 6.5 5 6.5 9.5v1.6M12 10.5c1.5-5 5.5-5.5 5.5-1v1.6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             <path d="M4 13.5a2.5 2.5 0 0 1 5 0zM15 13.5a2.5 2.5 0 0 1 5 0z" style={{ fill: "var(--accent)" }} />
           </svg>
         </div>

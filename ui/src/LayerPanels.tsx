@@ -123,9 +123,10 @@ export function AddPanel({ L, t, W, H, dur, select, say, puppets, addSound, scen
 
 /** One list of everything on the frame, top first. Drag a row to change the order; click to select
  *  (Shift / Ctrl: several), double-click to rename, the eye hides, the lock keeps it from being moved. */
-export function LayerStack({ L, t, sel, multi, select, seek, reg, E, selEl, pickEl, scanning, onMenu, onAdd, askClaude }: {
+export function LayerStack({ L, t, sel, multi, select, seek, reg, E, selEl, pickEl, scanning, onMenu, onAdd, askClaude, loose, onLoose, fixLoose, copyLoose, busy }: {
   L: Layers; t: number; sel: string; multi: string[]; select: (ids: string[], primary?: string) => void; seek: (t: number) => void;
   reg?: Reg[]; E?: Elements; selEl?: string; pickEl?: (id: string, t0: number, t1: number) => void; scanning?: boolean; onMenu?: (x: number, y: number, id: string) => void; onAdd?: () => void; askClaude?: () => void;
+  loose?: { t: number; loose: number[][]; share: number }[]; onLoose?: (t: number) => void; fixLoose?: () => void; copyLoose?: () => void; busy?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [now, setNow] = useState(false);
@@ -213,6 +214,16 @@ export function LayerStack({ L, t, sel, multi, select, seek, reg, E, selEl, pick
           <div className="empty">
             <span>{tx("No layers yet. Add a title, a shape, a picture or a puppet; drop a picture onto the frame.")}</span>
             {onAdd && <button className="btn sm" onClick={onAdd}><Plus />{tx("Add something")}</button>}
+          </div>
+        )}
+        {loose && loose.length > 0 && !scanning && (
+          <div className="hint alert" style={{ margin: "8px 0 2px", display: "flex", flexDirection: "column", gap: 8 }}>
+            <span>{tx("Some drawings are not in this list: the film's code draws them outside its elements, so they cannot be selected or moved. They are marked in red on the frame at these seconds:")}</span>
+            <span className="rowx" style={{ flexWrap: "wrap", gap: 4 }}>{loose.map((f) => <button key={f.t} className="chip" onClick={() => onLoose?.(f.t)}>{f.t} {tx("s")}</button>)}</span>
+            <span className="rowx" style={{ gap: 4, flexWrap: "wrap" }}>
+              {fixLoose && <button className="btn sm primary" disabled={busy} onClick={fixLoose}>{tx("Make them editable with the assistant")}</button>}
+              {copyLoose && <button className="btn sm ghost" onClick={copyLoose}>{tx("Copy for Claude")}</button>}
+            </span>
           </div>
         )}
         {reg && E && (

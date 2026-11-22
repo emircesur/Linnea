@@ -169,7 +169,7 @@ export function LayerInspector({ L, id, t, W, H, dur, seek, pathFor, setPathFor,
         <IconBtn title={tx("Duplicate (Ctrl+D)")} onClick={() => { const r = duplicate(items, [id]); L.update(r.items); select?.(r.ids); }}><Copy /></IconBtn>
         <IconBtn title={tx("Delete (Delete)")} onClick={() => { L.update(remove(items, [id])); select?.([]); }}><Trash2 /></IconBtn>
       </div>
-      {!on && <div className="hint warn">{tx("Not on screen at this second.")} <button className="linkish" onClick={() => seek?.(it.t0 + 0.05)}>{tx("Go to its start")}</button></div>}
+      {!on && <div className="hint alert">{tx("Not on screen at this second.")} <button className="linkish" onClick={() => seek?.(it.t0 + 0.05)}>{tx("Go to its start")}</button></div>}
 
       {/* ---- a group: what is in it ---- */}
       {it.kind === "group" && (

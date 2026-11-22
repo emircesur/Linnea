@@ -14,7 +14,7 @@ The planning rules come from ghost-editor (MIT, kurbaitaev); its full skill, pla
 SYSTEM.md are in the library (`library/upstream`, `library/recipes`, `library/references`). The review loop
 (notes on frames, the agent fixes and marks them) follows VideoHub (MIT).
 
-## Films written as code (VideoHub's contract)
+## Films written as code (Linnea's film contract)
 
 A film is a folder with `index.html` (a fixed-size canvas) and `film.js`, where `window.renderOut(t)` draws
 second `t`. Every second of the picture is code you control: graphics, type, charts, pictures and footage
@@ -39,7 +39,7 @@ fix film.js -> hub_frame the same t -> hub_note_update id=... status=fixed reply
 - The preview reloads by itself when a code file changes; the user does not need to do anything.
 - Changing film.js? Keep scenes in `window.VH_SCENES` so notes and the timeline stay labelled.
 
-### Edits without code (tweaks.json, VideoHub's keys; never delete them when editing the film)
+### Edits without code (tweaks.json; never delete them when editing the film)
 
 - `hub_sound` / `hub_sound_apply` / `hub_sound_clip`: sound layers (stems voice, music, sfx, stems/*.wav, else
   the mix), levels in dB, mute, solo, removeMusic, ducking ranges, clips on the timeline (copied into
@@ -52,6 +52,12 @@ fix film.js -> hub_frame the same t -> hub_note_update id=... status=fixed reply
 - `hub_2d`: 2D layers over the film (`items2d`: text, image, rect with a time range, px position and size,
   colours, fade). The linnea2d.js hook (in the template; `install=true` adds it) draws them after renderOut
   in the preview and in renders. Good for titles, labels and stickers the user wants to move by hand.
+- **Rule, never skipped: every visible thing is an element.** Titles, texts, cards, shapes, drawings,
+  characters, animals and props each go inside their own `el()` / `KE.text` / `KE.puppet` with a stable
+  English id and label. Raw canvas drawing outside `el()` shows in the preview but NOT in the app's Layers
+  panel or on its timeline, so the user cannot select, move or retime it. `hub_live` lists such drawings
+  under `checks.not_editable` (boxes and seconds); the film is not done until that list is empty.
+  Only a background that fills the frame may stay outside.
 - Editable elements (KE, also in linnea2d.js): draw EVERY on-screen element of a film (titles, captions,
   cards, frames, characters, objects) through the template's `el(id, t, {label, x, y, t0, t1, text, color}, (p, tt) => ...)`
   or `KE.text(g, id, t, {text, x, y, size, color, bg, ...})`, with a stable id, reading p.text / p.color

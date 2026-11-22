@@ -1,4 +1,4 @@
-// __TITLE__ — a film written as code (Linnea / VideoHub contract).
+// __TITLE__ — a film written as code, for Linnea.
 //
 //   window.renderOut(t)  draws second t on the fixed-size canvas #c (__W__x__H__). It may return a promise
 //                        (for example to seek a <video>); Linnea waits for it, in the preview and in renders.
@@ -6,7 +6,13 @@
 //   window.VH_SCENES     [{name, t0, t1}] — shown on Linnea's timeline, and in every note.
 //   audio/mix.wav        the film's sound; the preview plays it and renders mux it.
 //
-// Golden rule: the picture is a pure function of t. No Date.now(), no state carried from frame to frame,
+// RULE 1, never skipped: every visible thing (title, text, card, shape, drawing, character, animal, prop) is
+// drawn inside its own el(id, t, {label, ...}, draw) below (or KE.text / KE.puppet), with a readable English id
+// and label. Anything drawn with raw canvas calls outside el() shows in the preview but NOT in Linnea's Layers
+// panel or timeline, so the person cannot select, move or retime it; hub_live lists it under
+// checks.not_editable. Only a background that fills the frame may stay outside.
+//
+// RULE 2: the picture is a pure function of t. No Date.now(), no state carried from frame to frame,
 // no unseeded Math.random() (use rand(seed)). Then seeking, frame stepping, notes and partial re-renders
 // (only the 2-second chunks a fix touched) all give the same picture.
 (function () {

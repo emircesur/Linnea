@@ -1,5 +1,0 @@
-{
- "title": "Hello, VideoHub",
- "status": "in-progress",
- "render": { "workers": 2, "env": { "DUR": "10" } }
-}
