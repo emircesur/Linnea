@@ -42,7 +42,7 @@ const MUSIC: &[&str] = &["audio/music.wav", "audio/st_bed.wav", "audio/bed.wav",
 const SFX: &[&str] = &["audio/sfx.wav", "audio/st_sfx.wav", "stems/sfx.wav"];
 
 /// The film's sound layers: stems when it has them, else its one mix (the untouched original).
-fn layers(c: &Ctx, f: &Film) -> (Vec<Value>, Option<PathBuf>) {
+pub fn layers(c: &Ctx, f: &Film) -> (Vec<Value>, Option<PathBuf>) {
     let info = film::info(&c.cfg, f);
     let mix = js(&info, "audio").map(PathBuf::from);
     let mut out = vec![];
@@ -340,6 +340,31 @@ fn install_hook(cfg: &Config, f: &Film) -> Result<()> {
     Ok(())
 }
 
+const MARKER_COLORS: &[&str] = &["blue", "green", "yellow", "orange", "red", "purple"];
+
+/// Timeline markers as kept: {id, t (film seconds), name, color}, sorted by time; anything else is left out.
+fn clean_markers(m: &Value) -> Value {
+    let mut out: Vec<Value> = vec![];
+    for x in m.as_array().into_iter().flatten() {
+        let (Some(id), Some(t)) = (js(x, "id").filter(|s| !s.is_empty() && s.len() <= 64), jf(x, "t").filter(|t| t.is_finite() && *t >= 0.0)) else { continue };
+        if out.iter().any(|o| jsd(o, "id", "") == id) {
+            continue;
+        }
+        let color = js(x, "color").filter(|c| MARKER_COLORS.contains(c)).unwrap_or("blue");
+        let name: String = jsd(x, "name", "").trim().chars().take(80).collect();
+        let mut v = json!({"id": id, "t": (t * 1000.0).round() / 1000.0, "color": color});
+        if !name.is_empty() {
+            v["name"] = json!(name);
+        }
+        out.push(v);
+        if out.len() >= 1000 {
+            break;
+        }
+    }
+    out.sort_by(|a, b| jfd(a, "t", 0.0).partial_cmp(&jfd(b, "t", 0.0)).unwrap_or(std::cmp::Ordering::Equal));
+    json!(out)
+}
+
 fn t_2d(c: &Ctx, a: &Value) -> Result<Value> {
     let f = film_of(c, a)?;
     let info = film::info(&c.cfg, &f);
@@ -351,6 +376,9 @@ fn t_2d(c: &Ctx, a: &Value) -> Result<Value> {
     }
     if let Some(e) = a.get("edits").filter(|x| x.is_object()) {
         save_tweaks(&f, &json!({"edits": e}))?;
+    }
+    if let Some(m) = a.get("markers").filter(|x| x.is_array()) {
+        save_tweaks(&f, &json!({"markers": clean_markers(m)}))?;
     }
     // keep the hook current, so older films get the newest engine
     if hook_installed(&f, jsd(&info, "page", "index.html")) {
@@ -370,9 +398,9 @@ fn t_2d(c: &Ctx, a: &Value) -> Result<Value> {
         std::fs::copy(&p, dir.join(&name))?;
         return Ok(json!({"src": format!("vh2d/{name}")}));
     }
-    Ok(json!({"items": tweaks(&f)["items2d"].as_array().cloned().unwrap_or_default(), "edits": tweaks(&f)["edits"], "installed": hook_installed(&f, jsd(&info, "page", "index.html")),
+    Ok(json!({"items": tweaks(&f)["items2d"].as_array().cloned().unwrap_or_default(), "edits": tweaks(&f)["edits"], "markers": tweaks(&f)["markers"].as_array().cloned().unwrap_or_default(), "installed": hook_installed(&f, jsd(&info, "page", "index.html")),
               "size": [info["width"], info["height"]], "url": info["url"],
-              "note": "items2d = [{id, label, kind: text|image|rect|ellipse|counter|marker|arrow|phone|lower|progress|puppet, t0, t1, x, y, w, h (px), rot, scale, opacity, fade, anim / animOut: none|fade|slide-up|slide-down|slide-left|slide-right|pop|zoom|spin|blur|wipe, parent, hidden, locked, keys: [{t, x?, y?, w?, h?, rot?, scale?, opacity?, any style number (size, blur, shadowBlur, shadowX, shadowY, strokeWidth, borderWidth, radius, spacing, value, gradAngle, lineHeight) or colour (color, bg, bg2, stroke, shadow, border, accent, subColor), ease: linear|in|out|inOut|back|sine|expo|elastic|bounce|hold, bez: [x1, y1, x2, y2] (own curve)}], text, sub, font, weight, size, italic, align, spacing, lineHeight, upper, typing: chars|words (over reveal s), color, stroke, strokeWidth, bg, bg2 + gradAngle (gradient), radius, border, borderWidth, shadow, shadowBlur, shadowX, shadowY, blur, blend, fx, fy, fit: cover|contain, from, to, prefix, suffix, decimals, src}]. A video layer: {kind: 'video', src (add_image copies the file into vh2d/), in (s into the file), speed, loop, fit, sound (true: a linked sound clip plays its audio in the mix), gain (dB)}; it shows the exact frame in renders. A group: {kind: 'group', x, y, w, h, t0, t1} with layers whose parent is its id: it moves, turns, scales and fades them, and hiding it hides them. A puppet layer: {kind: 'puppet', puppet: name (puppet_link it first), params: {..}, states: [{state, t0 (seconds from the layer's t0), blend}], speed, pkeys: [{t (film s), p: {param: number}, ease}]}. `items` replaces the whole list: read it, change it, send it back. Drawn over the film by linnea2d.js in the preview and in renders."}))
+              "note": "items2d = [{id, label, kind: text|image|rect|ellipse|counter|marker|arrow|phone|lower|progress|puppet, t0, t1, x, y, w, h (px), rot, scale, opacity, fade, anim / animOut: none|fade|slide-up|slide-down|slide-left|slide-right|pop|zoom|spin|blur|wipe, parent, hidden, locked, keys: [{t, x?, y?, w?, h?, rot?, scale?, opacity?, any style number (size, blur, shadowBlur, shadowX, shadowY, strokeWidth, borderWidth, radius, spacing, value, gradAngle, lineHeight) or colour (color, bg, bg2, stroke, shadow, border, accent, subColor), ease: linear|in|out|inOut|back|sine|expo|elastic|bounce|hold, bez: [x1, y1, x2, y2] (own curve)}], text, sub, font, weight, size, italic, align, spacing, lineHeight, upper, typing: chars|words (over reveal s), color, stroke, strokeWidth, bg, bg2 + gradAngle (gradient), radius, border, borderWidth, shadow, shadowBlur, shadowX, shadowY, blur, blend, fx, fy, fit: cover|contain, from, to, prefix, suffix, decimals, src}]. A video layer: {kind: 'video', src (add_image copies the file into vh2d/), in (s into the file), speed, loop, fit, sound (true: a linked sound clip plays its audio in the mix), gain (dB)}; it shows the exact frame in renders. A group: {kind: 'group', x, y, w, h, t0, t1} with layers whose parent is its id: it moves, turns, scales and fades them, and hiding it hides them. A puppet layer: {kind: 'puppet', puppet: name (puppet_link it first), params: {..}, states: [{state, t0 (seconds from the layer's t0), blend}], speed, pkeys: [{t (film s), p: {param: number}, ease}]}. A picture or video layer can carry grade: {exposure (stops), contrast, saturation, temp, tint (-1..1), hue (deg), lift / gamma / gain: {x, y (a colour wheel, -1..1), l (brightness, -1..1)}, lut: a .cube file (add_image copies it into vh2d/), lutMix (0..1), off (compare)}. A text layer can come in part by part: split: {by: char|word|line, anim: rise|drop|pop|fade|blur|slide|spin|wave, dur (s each), stagger (s between), start, order: forward|reverse|center|random, out (leave the same way)}. `markers` are the user's places on the timeline ({id, t, name, color}): when the user names a marker, that is the moment meant. `items` replaces the whole list: read it, change it, send it back. Drawn over the film by linnea2d.js in the preview and in renders."}))
 }
 
 // ---------- thumbnails ----------
@@ -549,7 +577,7 @@ pub const TOOLS: &[Tool] = &[
     Tool { name: "hub_sound", desc: "The film's sound: its layers (stems: voice, music, sfx, stems/*.wav; else its mix), the mixer settings and the sound clips on its timeline (each with id, file, at, gain dB, mute, name, dur), from tweaks.json. `set` merges mixer settings {levels: {layer: dB}, mute: [layer], solo: layer or clip id, removeMusic, duck: [{from, to, db}]}; `clip` changes one clip by id {id, gain, mute, at, name}; `clips` replaces the list. apply=true rebuilds the mix right after.", params: &[FR, ("set", "object", "Mixer settings to merge"), ("clip", "object", "One clip's changes: {id, gain, mute, at, name}"), ("clips", "array", "[{id, file, at, gain, mute, name}]"), ("apply", "boolean", "Rebuild the mix after the change")], long: false, app_only: false, run: t_sound },
     Tool { name: "hub_sound_apply", desc: "Rebuild audio/mix.wav from the sound layers, levels, mutes, ducking and clips (the original is kept once as <mix>.vhorig.wav). The preview and renders use the new mix.", params: &[FR], long: false, app_only: false, run: t_sound_apply },
     Tool { name: "hub_sound_clip", desc: "Put one sound on the film's timeline as its own clip, so the user can turn it up, down or off by itself in the app: sound=<library id> (whoosh, pop, ding... `library` lists them), or file= a file in the film folder (stays there) or anywhere (copied into vhaudio/). Add every effect, sting and music piece this way instead of mixing it into audio/mix.wav yourself. apply=true rebuilds the mix at once (else hub_sound_apply).", params: &[FR, ("sound", "string", "Library sound id"), ("file", "string", "Sound file (film folder or full path)"), ("at!", "number", "Second it starts"), ("gain", "number", "dB, 0 = as it is"), ("name", "string", "Label"), ("apply", "boolean", "Rebuild the mix now")], long: false, app_only: false, run: t_clip_add },
-    Tool { name: "hub_2d", desc: "2D layers over the film (tweaks.json items2d): titles, labels, pictures, boxes, counters, arrows, lower thirds and library puppets, each with a time range, keyframes and an optional parent. The linnea2d.js hook draws them in the preview and in renders; install=true adds the hook to the page. `items` replaces the list; add_image copies a picture into vh2d/.", params: &[FR, ("items", "array", "The layers"), ("install", "boolean", "Add the hook to the page"), ("add_image", "string", "Picture to copy into vh2d/"), ("edits", "object", "The user's edits of elements the film draws through KE (or of plain text): {id: {dx, dy, scale, rot, opacity, hidden, t0, t1, text, color, size, keys}}")], long: false, app_only: false, run: t_2d },
+    Tool { name: "hub_2d", desc: "2D layers over the film (tweaks.json items2d): titles, labels, pictures, boxes, counters, arrows, lower thirds and library puppets, each with a time range, keyframes and an optional parent. The linnea2d.js hook draws them in the preview and in renders; install=true adds the hook to the page. `items` replaces the list; add_image copies a picture into vh2d/.", params: &[FR, ("items", "array", "The layers"), ("install", "boolean", "Add the hook to the page"), ("add_image", "string", "Picture to copy into vh2d/"), ("edits", "object", "The user's edits of elements the film draws through KE (or of plain text): {id: {dx, dy, scale, rot, opacity, hidden, t0, t1, text, color, size, keys}}"), ("markers", "array", "Replace the timeline markers: [{id, t (s), name, color: blue|green|yellow|orange|red|purple}]; the user sets them with M to point at moments")], long: false, app_only: false, run: t_2d },
     Tool { name: "hub_thumbs", desc: "The thumbnails of a film (or the shared area) and the Thumbnail Studio templates.", params: &[FO], long: false, app_only: false, run: t_thumbs },
     Tool { name: "hub_thumb_new", desc: "Start a thumbnail from a template (or blank), filling its slots.", params: &[FO, ("title!", "string", "Title"), ("template", "string", "Template id"), ("slots", "object", "Slot values"), ("format", "string", "16:9 | 9:16")], long: false, app_only: false, run: t_thumb_new },
     Tool { name: "hub_thumb", desc: "One thumbnail: its layout document, variants, final and notes. `set` merges into thumb.json; layout / sketch / final take PNG data URLs.", params: &[FO, ("id!", "string", "Thumbnail id"), ("set", "object", "Merge into thumb.json"), ("layout", "string", "PNG data URL"), ("sketch", "string", "PNG data URL"), ("final", "string", "PNG data URL")], long: false, app_only: false, run: t_thumb },

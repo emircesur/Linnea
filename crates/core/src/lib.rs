@@ -18,6 +18,7 @@ pub mod matte;
 pub mod mcp;
 pub mod media;
 pub mod net;
+pub mod nle;
 pub mod proc;
 pub mod publish;
 pub mod project;

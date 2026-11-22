@@ -822,7 +822,7 @@ const T: &[Tool] = &[
 /// Every tool: the film tools (hub_*, VideoHub's surface) and the footage editor's.
 pub fn all() -> &'static [&'static Tool] {
     static A: std::sync::OnceLock<Vec<&'static Tool>> = std::sync::OnceLock::new();
-    A.get_or_init(|| crate::film::TOOLS.iter().chain(crate::studio::TOOLS.iter()).chain(crate::extra::TOOLS.iter()).chain(crate::ai::TOOLS.iter()).chain(crate::publish::TOOLS.iter()).chain(crate::layers::TOOLS.iter()).chain(crate::cues::TOOLS.iter()).chain(crate::puppets::TOOLS.iter()).chain(crate::langs::TOOLS.iter()).chain(crate::update::TOOLS.iter()).chain(crate::manage::TOOLS.iter()).chain(T.iter()).collect())
+    A.get_or_init(|| crate::film::TOOLS.iter().chain(crate::studio::TOOLS.iter()).chain(crate::extra::TOOLS.iter()).chain(crate::ai::TOOLS.iter()).chain(crate::publish::TOOLS.iter()).chain(crate::layers::TOOLS.iter()).chain(crate::cues::TOOLS.iter()).chain(crate::puppets::TOOLS.iter()).chain(crate::langs::TOOLS.iter()).chain(crate::update::TOOLS.iter()).chain(crate::manage::TOOLS.iter()).chain(crate::nle::TOOLS.iter()).chain(T.iter()).collect())
 }
 
 fn summarize(name: &str, a: &Value, v: &Value) -> String {

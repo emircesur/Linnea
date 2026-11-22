@@ -367,7 +367,7 @@ export function hasClip(): boolean {
   try { return (localStorage.getItem(CLIP) || "[]").length > 2; } catch { return false; }
 }
 const STYLE = "linnea.style2d";
-const STYLE_KEYS = ["fx", "fy", "fit", "font", "size", "weight", "italic", "align", "spacing", "lineHeight", "upper", "color", "stroke", "strokeWidth", "bg", "bg2", "gradAngle", "radius", "border", "borderWidth", "shadow", "shadowBlur", "shadowX", "shadowY", "blend", "blur", "anim", "animOut", "fade", "typing", "reveal"];
+const STYLE_KEYS = ["fx", "fy", "fit", "font", "size", "weight", "italic", "align", "spacing", "lineHeight", "upper", "color", "stroke", "strokeWidth", "bg", "bg2", "gradAngle", "radius", "border", "borderWidth", "shadow", "shadowBlur", "shadowX", "shadowY", "blend", "blur", "anim", "animOut", "fade", "typing", "reveal", "split", "grade"];
 export function copyStyle(it: Item) {
   const s: Json = {};
   for (const k of STYLE_KEYS) s[k] = it[k];

@@ -78,6 +78,16 @@ from the code, with no render in between, and reloads the preview the moment Cla
 - **Curves and colours**: every keyframe has a curve editor (named eases or your own Bézier), and colours, shadows,
   sizes and other style values can be keyed and change smoothly over time.
 - **Zoom the frame**: fit, 25–400 % or Ctrl + wheel around the pointer; the middle button drags it around.
+- **Colour**: every picture and video layer has its own grade: exposure, warmth, tint, contrast, saturation
+  and hue, three colour wheels (shadows, midtones, highlights), ready looks (teal and orange, bleach bypass,
+  faded film, day for night…) and your own `.cube` LUT with an amount. One click compares it with the
+  original; another gives every other clip the same colour. Previews and renders grade alike.
+- **Scopes** (`U`): waveform, RGB parade, vectorscope and histogram of the frame on screen, live while it
+  plays and while you drag.
+- **Text by parts**: any text layer can come in letter by letter, word by word or line by line, each part
+  rising, dropping, popping, blurring, sliding, spinning or waving in its turn, and leave the same way.
+- **Markers**: `M` drops a marker at the playhead, `Shift+M` jumps to the next. Name them, colour them, drag
+  them; Claude reads them too, so "the Hook marker" means that second.
 - **Ready scenes**: a presenter with a speech bubble, like and subscribe, celebration, countdown, checklist,
   callout, quote card, before / after and a title intro, each placed as one group.
 - Copy and paste layers, even from one film to another; copy and paste a layer's look.
@@ -95,6 +105,8 @@ from the code, with no render in between, and reloads the preview the moment Cla
   preview** at half size.
 - NVIDIA, AMD and Intel hardware encoders, or x264 on the CPU.
 - Every version is kept, and you can watch only what changed between two of them.
+- **Open it in another editor**: the newest render goes to Final Cut Pro, Premiere Pro or DaVinci Resolve
+  as a timeline, with each sound it was mixed from on a track of its own and your markers.
 
 ### One film, many languages
 
@@ -116,6 +128,9 @@ from the code, with no render in between, and reloads the preview the moment Cla
 - **Play** a candidate before you commit, then **Make reel**: pauses trimmed, the speaker's face tracked
   into a 9:16 frame, captions placed word by word, the strongest line copied to the front as a hook.
 - Batch-render every clip in 9:16, 1:1, 4:5 or 16:9.
+- **Finish it elsewhere**: the cut goes to Final Cut Pro or DaVinci Resolve (FCPXML), Premiere Pro (XML) or
+  any editor (CMX 3600 EDL): every cut with its speed and hold, framed to the reel's size, the music on its
+  own track and the captions as SRT.
 
 ### Cut by editing the text
 
@@ -268,7 +283,10 @@ stays where it is (`Videos\Kesit` keeps working), and old projects and films ope
 
 ## Credits and license
 
-Linnea is MIT licensed.
+The code is MIT licensed. The license covers the code, not the Linnea name or logo: see
+[License & Brand Guidelines](TRADEMARK.md) for what you may do with the name (say "made with Linnea", fork to
+contribute, share unchanged releases) and what needs permission first (a renamed product, the logo, implied
+endorsement, official-looking names).
 
 The editing rules, style presets, recipe packs, the `reel.json` format and the CC0 sound pack come from
 [ghost-editor](https://github.com/kurbaitaev/ghost-editor) (MIT, kurbaitaev); the originals are in

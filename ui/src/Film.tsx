@@ -7,6 +7,7 @@ import { ArrowLeft, Check, ChevronLeft, ChevronRight, Circle, Copy, FolderOpen, 
 import { Activity, dur, fetchJson, fileUrl, Json, runJob, tc, tool, useLoad } from "./api";
 import { SoundPanel } from "./Studio";
 import { evalItem, LayerOverlay, useLayerKeys, useLayers } from "./Layers";
+import { Scopes } from "./Scopes";
 import { AddPanel, Command, LayerStack, Menu, MenuButton, MenuItem, Palette, PuppetGrid } from "./LayerPanels";
 import { SceneGrid } from "./Scenes";
 import { LayerInspector, MultiInspector } from "./Inspector";
@@ -108,6 +109,12 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
   const [pageErr, setPageErr] = useState("");
   const [scenes, setScenes] = useState<Json[]>([]);
   const scenesRef = useRef<Json[]>([]);
+  // markers: the person's own places on the timeline (M), kept in tweaks.json for the agent to read too
+  const [markers, setMarkersS] = useState<Json[]>([]);
+  const markersRef = useRef<Json[]>([]);
+  markersRef.current = markers;
+  useEffect(() => { tool("hub_2d", { film: id }).then((r) => setMarkersS(r.markers || [])).catch(() => {}); }, [id]);
+  const setMarkers = (m: Json[]) => { const s2 = [...m].sort((a, b) => a.t - b.t); setMarkersS(s2); tool("hub_2d", { film: id, markers: s2 }).catch(() => {}); };
   const [rev, setRev] = useState(0);
   const [range, setRange] = useState<[number, number] | null>(null);
   const [mode, setMode] = useState<"live" | "note" | "check">("live");
@@ -195,6 +202,8 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
   useEffect(() => { try { localStorage.setItem("linnea.snap", snapOn ? "1" : "0"); } catch { /* private window */ } }, [snapOn]);
   // the language shown on the frame (null: the film's own texts), and the extra views
   const [viewLang, setViewLang] = useState<ViewLang>(null);
+  const [scopes, setScopes] = useState(() => { try { return localStorage.getItem("linnea.scopes") === "1"; } catch { return false; } });
+  useEffect(() => { try { localStorage.setItem("linnea.scopes", scopes ? "1" : "0"); } catch { /* private window */ } }, [scopes]);
   const [board, setBoard] = useState(() => { try { return localStorage.getItem("linnea.board") === "1"; } catch { return false; } });
   const [keysOpen, setKeysOpen] = useState(false);
   useEffect(() => { try { localStorage.setItem("linnea.board", board ? "1" : "0"); } catch { /* private window */ } }, [board]);
@@ -458,6 +467,16 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       else if (e.code === "PageUp") { e.preventDefault(); const p = sc.filter((x: number) => x < tRef.current - 0.25).pop(); seek(p ?? 0); }
       else if (e.key === "?") setKeysOpen((o) => !o);
       else if (e.key === "b" || e.key === "B") setBoard((b) => !b);
+      else if (e.key === "u" || e.key === "U") setScopes((v) => !v);
+      else if (e.key === "M" || (e.key === "m" && e.shiftKey)) {
+        // the next marker (back to the first after the last)
+        const ms = markersRef.current;
+        const nx = ms.find((m) => m.t > tRef.current + 0.01) || ms[0];
+        if (nx) seek(nx.t);
+      } else if (e.key === "m") {
+        const tt = Math.round(tRef.current * 1000) / 1000;
+        if (!markersRef.current.some((m) => Math.abs(m.t - tt) < 0.01)) setMarkers([...markersRef.current, { id: "m" + Date.now().toString(36), t: tt, color: "blue" }]);
+      }
       else if (/^[1-5]$/.test(e.key)) showSide((["props", "sound", "langs", "ai", "versions"] as const)[+e.key - 1]);
       else if (e.key === "a" || e.key === "A") { showLeft("add"); setPlaying(false); }
       else if (e.key === "g" || e.key === "G") setGuides((g) => (g === "" ? "safe" : g === "safe" ? "thirds" : ""));
@@ -579,6 +598,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
     { id: "frame", group: tx("Review"), label: range ? tx("Range to Claude") : tx("Frame to Claude"), run: sendFrame },
     { id: "guides", group: tx("View"), label: tx("Safe areas / thirds / none"), keys: "G", run: () => setGuides((g) => (g === "" ? "safe" : g === "safe" ? "thirds" : "")) },
     { id: "board", group: tx("View"), label: tx("Storyboard"), keys: "B", run: () => setBoard(!board) },
+    { id: "scopes", group: tx("View"), label: tx("Scopes"), keys: "U", run: () => setScopes(!scopes) },
     { id: "snap", group: tx("View"), label: snapOn ? tx("Turn snapping off") : tx("Turn snapping on"), run: () => setSnapOn(!snapOn) },
     { id: "keys", group: tx("View"), label: tx("Keyboard shortcuts"), keys: "?", run: () => setKeysOpen(true) },
     { id: "tl", group: tx("View"), label: tx("Panel: layers"), run: () => showLeft("layers") },
@@ -611,6 +631,11 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
     { label: (guides === "thirds" ? "✓ " : "") + tx("Rule of thirds"), run: () => setGuides(guides === "thirds" ? "" : "thirds") },
     { label: (snapOn ? "✓ " : "") + tx("Snapping"), run: () => setSnapOn(!snapOn) },
     { label: (board ? "✓ " : "") + tx("Storyboard"), keys: "B", run: () => setBoard(!board) },
+    { label: (scopes ? "✓ " : "") + tx("Scopes"), keys: "U", run: () => setScopes(!scopes) },
+    "-",
+    { label: tx("Add a marker"), keys: "M", run: () => { const tt = Math.round(tRef.current * 1000) / 1000; if (!markers.some((m) => Math.abs(m.t - tt) < 0.01)) setMarkers([...markers, { id: "m" + Date.now().toString(36), t: tt, color: "blue" }]); } },
+    { label: tx("Next marker"), keys: "Shift+M", disabled: !markers.length, run: () => { const nx = markers.find((m) => m.t > tRef.current + 0.01) || markers[0]; if (nx) seek(nx.t); } },
+    { label: tx("Remove all markers"), disabled: !markers.length, run: () => { if (window.confirm(tx("Remove all {0} markers?", markers.length))) setMarkers([]); } },
     { label: (loop ? "✓ " : "") + tx("Loop"), run: () => setLoop(!loop) },
     "-",
     { label: (pane.l ? "✓ " : "") + tx("Left panel"), run: () => flip("l") },
@@ -779,6 +804,9 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
             </>
           )}
         </Viewer>
+        {scopes && !watch && <Scopes film={id} t={t} playing={playing} close={() => setScopes(false)} source={() => {
+          try { const d = frame.current?.contentDocument; return d ? [...d.querySelectorAll("canvas")].sort((a, b) => b.width * b.height - a.width * a.height)[0] || null : null; } catch { return null; }
+        }} />}
         {scanning && info && <iframe ref={scanFrame} key={scanKey} src={`${info.url}?r=${rev}&scan=1`} onLoad={onScanLoad} title="scan" aria-hidden tabIndex={-1} style={{ position: "fixed", left: -20000, top: 0, width: W, height: H, border: 0, visibility: "hidden", pointerEvents: "none" }} />}
         <div id="note-host" style={{ width: "100%", maxWidth: 680 }} />
         {!ready && !watch && <div className="muted" style={{ fontSize: 12 }}>{pageErr ? <span className="err">{pageErr}</span> : tx("Loading the page")}</div>}
@@ -859,7 +887,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
           </div>
         )}
         {side === "versions" && <>
-        <Versions versions={versions} watch={watch} setWatch={setWatch} />
+        <Versions film={id} say={say} versions={versions} watch={watch} setWatch={setWatch} />
         <Cleanup film={id} say={say} />
         <div className="stack" style={{ gap: 8 }}>
           <h2>{tx("Working with Claude")}</h2>
@@ -876,7 +904,7 @@ export function FilmReview({ id, act, say, back }: { id: string; act: Activity; 
       </div>
 
       <div className="dock">
-        <FilmTimeline dur={DUR} fps={FPS} t={t} seek={(x: number) => { setPlaying(false); seek(x); }} scenes={scenes.length ? scenes : info.scenes || []} notes={notes} range={range} setRange={setRange} changed={latest?.changedRanges || []} chunkSec={info.chunk_frames / FPS} lanes={lanes}
+        <FilmTimeline markers={markers} setMarkers={setMarkers} dur={DUR} fps={FPS} t={t} seek={(x: number) => { setPlaying(false); seek(x); }} scenes={scenes.length ? scenes : info.scenes || []} notes={notes} range={range} setRange={setRange} changed={latest?.changedRanges || []} chunkSec={info.chunk_frames / FPS} lanes={lanes}
           playing={playing} snapOn={snapOn} setSnapOn={setSnapOn} open={pane.tl} setOpen={() => flip("tl")}
           groupActs={{
             elements: (() => { const ids = reg.filter((r) => !E.edits[r.id]?.deleted).map((r) => r.id); const hidden = ids.length > 0 && ids.every((x) => E.edits[x]?.hidden);
@@ -1308,12 +1336,20 @@ function RenderMenu({ disabled, latest, fixed, run, lang }: Json) {
   );
 }
 
-function Versions({ versions, watch, setWatch }: Json) {
+function Versions({ versions, watch, setWatch, film, say }: Json) {
   const list: Json[] = versions.slice().reverse();
   return (
     <div className="stack" style={{ gap: 8 }}>
       <h2>{tx("Versions")}</h2>
       {!list.length && <p className="sec" style={{ fontSize: 12 }}>{tx("No renders yet. The film plays live; press Render when you are ready.")}</p>}
+      {list.length > 0 && film && (
+        <div className="rowx" style={{ gap: 4, flexWrap: "wrap" }}>
+          <span className="muted grow" style={{ fontSize: 12 }}>{tx("Open in another editor")}</span>
+          {([["fcpxml", "Final Cut", tx("Final Cut Pro and DaVinci Resolve (FCPXML)")], ["premiere", "Premiere", tx("Premiere Pro and DaVinci Resolve (XML), with the markers")]] as const).map(([f, l, title]) => (
+            <button key={f} className="btn sm ghost" title={title} onClick={() => tool("export_timeline", { film, format: f }).then((r) => { say?.(tx("Timeline written: {0}", r.files.map((x: Json) => String(x.file).split("/").pop()).join(", "))); tool("reveal", { path: r.files[0].file }).catch(() => {}); }).catch((e) => say?.(e.message))}>{l}</button>
+          ))}
+        </div>
+      )}
       <div className="list-rows">
         {list.map((v) => (
           <div key={v.v} className="rowx" style={{ padding: "8px 0" }}>
@@ -1365,7 +1401,40 @@ function VersionPlayer({ v, onTime, close, note }: Json) {
 const HEAD = 148;
 /** The film's timeline: ruler, render chunks, scenes, notes and one lane per layer, grouped and foldable.
  *  Ctrl + wheel zooms around the pointer, Shift + wheel (or a trackpad swipe) scrolls; bars snap. */
-function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, changed, chunkSec, lanes, playing, snapOn, setSnapOn, tools, open = true, setOpen, groupActs }: Json) {
+const MARKER_COLORS: Record<string, string> = { blue: "#5b9dff", green: "#5fcf7a", yellow: "#e9c84a", orange: "#f08c3a", red: "#ef5b5b", purple: "#b07cf2" };
+/** A marker on the ruler: drag it along, double-click to name it, right-click for its colour or to remove it. */
+function MarkerFlag({ m, X, at, fps, seek, change, remove }: Json) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const down = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    if (e.detail === 2) {
+      const name = window.prompt(tx("Marker name"), m.name || "");
+      if (name !== null) change({ ...m, name: name.trim() || undefined });
+      return;
+    }
+    let moved = false, tt = m.t;
+    const mv = (ev: MouseEvent) => { moved = true; tt = Math.round(at(ev) * fps) / fps; (e.target as HTMLElement).style.left = X(tt) + "px"; };
+    const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); if (moved) change({ ...m, t: Math.round(tt * 1000) / 1000 }); else seek(m.t); };
+    window.addEventListener("mousemove", mv);
+    window.addEventListener("mouseup", up);
+  };
+  return (
+    <>
+      <span className="tl-mark" style={{ left: X(m.t), ["--mc" as any]: MARKER_COLORS[m.color] || MARKER_COLORS.blue }} title={`${m.name || tx("Marker")} · ${tc(m.t, fps)}\n${tx("Drag to move, double-click to name, right-click for more")}`}
+        onMouseDown={down} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY }); }}>{m.name ? <b>{m.name}</b> : null}</span>
+      {menu && <Menu x={menu.x} y={menu.y} close={() => setMenu(null)} items={[
+        { label: tx("Name…"), run: () => { const name = window.prompt(tx("Marker name"), m.name || ""); if (name !== null) change({ ...m, name: name.trim() || undefined }); } },
+        "-",
+        ...Object.keys(MARKER_COLORS).map((c) => ({ label: (m.color === c ? "✓ " : "") + tx(c[0].toUpperCase() + c.slice(1)), run: () => change({ ...m, color: c }) })),
+        "-",
+        { label: tx("Remove the marker"), run: remove },
+      ]} />}
+    </>
+  );
+}
+
+function FilmTimeline({ markers = [], setMarkers, dur: D, fps, t, seek, scenes, notes, range, setRange, changed, chunkSec, lanes, playing, snapOn, setSnapOn, tools, open = true, setOpen, groupActs }: Json) {
   const box = useRef<HTMLDivElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(800);
@@ -1455,7 +1524,7 @@ function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, ch
     for (const ln of ls) { const h = laneRows(ln) * LANE_H; rows.push({ kind: "lane", key: ln.key, label: ln.label, y, h, lane: ln }); y += h; }
   }
   const height = y + 6;
-  const snaps = useMemo(() => !snapOn ? undefined : [0, D, t, ...scenes.flatMap((s: Json) => [s.t0, s.t1]), ...(range || []), ...(lanes as Lane[]).flatMap((ln) => ln.items.flatMap((i) => [i.s, i.e]))], [snapOn, D, t, scenes, range, lanes]);
+  const snaps = useMemo(() => !snapOn ? undefined : [0, D, t, ...markers.map((m: Json) => m.t), ...scenes.flatMap((s: Json) => [s.t0, s.t1]), ...(range || []), ...(lanes as Lane[]).flatMap((ln) => ln.items.flatMap((i) => [i.s, i.e]))], [snapOn, D, t, markers, scenes, range, lanes]);
   return (
     <>
       {open && <div className="tl-resize" onPointerDown={resize} title={tx("Drag to make the timeline taller or shorter")} />}
@@ -1487,6 +1556,7 @@ function FilmTimeline({ dur: D, fps, t, seek, scenes, notes, range, setRange, ch
           {notes.filter((n: Json) => n.status !== "done" && n.status !== "wontfix").map((n: Json) => (
             <span key={n.id} className="marker note" style={{ left: X(n.t), top: 70, borderColor: n.status === "fixed" ? "var(--good)" : undefined }} title={n.text} onMouseDown={(e) => { e.stopPropagation(); seek(n.t); }}>{n.text}</span>
           ))}
+          {markers.map((m: Json) => <MarkerFlag key={m.id} m={m} X={X} at={at} fps={fps} seek={seek} change={(n: Json) => setMarkers?.(markers.map((x: Json) => (x.id === m.id ? n : x)))} remove={() => setMarkers?.(markers.filter((x: Json) => x.id !== m.id))} />)}
           {snapLine !== null && <div style={{ position: "absolute", left: X(snapLine), top: 0, bottom: 0, width: 1, background: "#ff4fa3", pointerEvents: "none", zIndex: 4 }} />}
           <div className="playhead" style={{ left: X(t), zIndex: 4 }} />
           <div className="tl-head" style={{ width: HEAD, height }}>

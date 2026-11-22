@@ -806,7 +806,7 @@ pub fn new_film(cfg: &Config, a: &Value) -> Result<Value> {
             }
         }
     }
-    Ok(json!({"film": f.id, "dir": fwd(&f.dir), "files": ["index.html", "film.js"], "next": "edit film.js (window.renderOut(t) draws second t): draw every visible thing inside its own el() with an English id and label (anything outside el() is missing from the app's Layers panel), then hub_live to check it (it lists drawings outside el() under checks.not_editable) and show it to the user"}))
+    Ok(json!({"film": f.id, "dir": fwd(&f.dir), "files": ["index.html", "film.js"], "next": "edit film.js (window.renderOut(t) draws second t): replace the starter's three placeholder scenes with the film's own and delete every placeholder element you do not use (hub_live lists leftovers under checks.leftovers); draw every visible thing inside its own el() with an English id and label (anything outside el() is missing from the app's Layers panel), then hub_live to check it (it lists drawings outside el() under checks.not_editable) and show it to the user"}))
 }
 
 // ---------- tools ----------
@@ -895,6 +895,13 @@ fn t_live(c: &Ctx, a: &Value) -> Result<Value> {
                 let audit = p.eval(&format!("(async () => window.KE_AUDIT ? await window.KE_AUDIT({}) : null)()", json!(times))).unwrap_or(Value::Null);
                 if !audit.is_null() {
                     checks["elements"] = audit["elements"].clone();
+                    // left over from the starter or never drawn: neither belongs in the person's Layers panel
+                    if !ja(&audit, "template").is_empty() || !ja(&audit, "empty").is_empty() {
+                        checks["leftovers"] = json!({
+                            "template": audit["template"], "empty": audit["empty"],
+                            "fix": "Delete these from film.js: `template` are the starter film's placeholders (Start here, One idea, per scene, on the word…), `empty` are el() calls that draw nothing at any checked second. Remove the el() call and whatever only it used (its scene, helper or asset), so the Layers panel lists only what the film shows.",
+                        });
+                    }
                     let loose: Vec<Value> = ja(&audit, "frames").iter().filter(|f| !ja(f, "loose").is_empty()).cloned().collect();
                     if !loose.is_empty() {
                         checks["not_editable"] = json!({
@@ -934,6 +941,12 @@ fn t_live(c: &Ctx, a: &Value) -> Result<Value> {
     }
     if checks["ready"] != json!(true) || !ja(&checks, "render_errors").is_empty() || !ja(&checks, "console_errors").is_empty() {
         next.push("fix the errors above, then call hub_live again".into());
+    } else if checks["leftovers"].is_object() {
+        let n = ja(&checks["leftovers"], "template").len() + ja(&checks["leftovers"], "empty").len();
+        next.push(format!("NOT DONE YET: {n} element(s) are left over (checks.leftovers): placeholders from the starter film or el() calls that draw nothing. Delete them from film.js, then call hub_live again"));
+        if not_editable > 0 {
+            next.push(format!("also: at {not_editable} of the checked seconds something is drawn outside every element (checks.not_editable); move each into its own el()"));
+        }
     } else if not_editable > 0 {
         next.push(format!("NOT DONE YET: at {not_editable} of the checked seconds something is drawn outside every element (checks.not_editable). The person sees it in the preview but cannot find or edit it in Layers. Move each such drawing into its own el() with an English id and label, then call hub_live again until not_editable is gone"));
     } else {

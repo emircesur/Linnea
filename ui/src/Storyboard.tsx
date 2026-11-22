@@ -68,7 +68,7 @@ const KEYS: [string, [string, string][]][] = [
   ["Play", [
     ["Space / K", "Play / pause"], [", .", "One frame"], ["← →", "One frame (nothing selected)"], ["Shift + ← →", "One second"], ["J / L", "One second back / on"],
     ["Home / End", "Start / end"], ["PageUp / PageDown", "Previous / next scene"], ["I / O", "Range in / out"], ["Shift + drag", "Select a range on the timeline"],
-    ["N", "Note on the frame"], ["B", "Storyboard"], ["G", "Safe areas / thirds"], ["1 – 5", "Properties, sound, languages, assistant, versions"], ["A", "Add panel"],
+    ["N", "Note on the frame"], ["M / Shift + M", "Add a marker / go to the next one"], ["B", "Storyboard"], ["U", "Scopes"], ["G", "Safe areas / thirds"], ["1 – 5", "Properties, sound, languages, assistant, versions"], ["A", "Add panel"],
   ]],
   ["Edit", [
     ["Ctrl + K", "Every command, by name"], ["Ctrl + Z / Ctrl + Y", "Undo / redo"], ["Shift + click", "Select several"], ["Ctrl + A", "Select every layer on screen"],

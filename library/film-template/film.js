@@ -58,6 +58,9 @@
   }
 
   // ---- the film ------------------------------------------------------------------------------------
+  // PLACEHOLDERS: the three scenes below only show how el() works. Replace them with the film's own scenes and
+  // delete every placeholder element you do not use (hub_live lists the ones left under checks.leftovers), so
+  // the person's Layers panel holds only what the film really shows.
   const SCENES = [
     { name: 'Hook', t0: 0, t1: DUR * 0.45 },
     { name: 'Point', t0: DUR * 0.45, t1: DUR * 0.8 },

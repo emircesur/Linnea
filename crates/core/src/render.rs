@@ -379,6 +379,20 @@ pub fn build(cfg: &Config, p: &Project, rid: &str, mode: Mode, out: &Path) -> Re
             warn.push("look.grade is ignored: the speaker's face stays as shot unless look.asked holds the user's words asking for a grade".into());
         }
     }
+    // a .cube LUT (look.lut: a file in the project, or anywhere), copied next to the build so ffmpeg reads it by name
+    if let Some(lut) = js(look, "lut").filter(|s| !s.is_empty()) {
+        let f = if Path::new(lut).is_absolute() { PathBuf::from(lut) } else { p.dir.join(lut) };
+        if look.get("asked").is_none() {
+            warn.push("look.lut is ignored: the speaker's face stays as shot unless look.asked holds the user's words asking for a grade".into());
+        } else if f.is_file() && f.extension().map(|e| e.eq_ignore_ascii_case("cube")).unwrap_or(false) {
+            let name = format!("{}.look.cube", slug(rid));
+            if std::fs::copy(&f, build_dir.join(&name)).is_ok() {
+                chain.push(format!("lut3d=file={name}:interp=tetrahedral"));
+            }
+        } else {
+            warn.push(format!("look.lut: no .cube file at {}", fwd(&f)));
+        }
+    }
     if jfd(look, "grain", 0.0) > 0.0 {
         chain.push(format!("noise=alls={:.0}:allf=t+u", (jfd(look, "grain", 0.0) * 100.0).min(30.0)));
     }

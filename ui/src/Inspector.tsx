@@ -16,6 +16,7 @@ import {
 import { PuppetFields, PuppetInfo } from "./Puppets";
 import { COLORS, hexOf, STYLE_NUM, styled } from "./Motion";
 import { CurveEditor, CurveIcon, curveName } from "./Curve";
+import { GradeSection } from "./Grade";
 
 // ---------- small fields ----------
 export function NumField({ label, value, onChange, onLive, step = 1, min, max, title, keyState, onKey, wide }: {
@@ -200,6 +201,8 @@ export function LayerInspector({ L, id, t, W, H, dur, seek, pathFor, setPathFor,
         </Section>
       )}
 
+      {(it.kind === "video" || it.kind === "image") && <GradeSection L={L} it={it} />}
+
       {/* ---- content ---- */}
       {(textual || ["phone", "progress", "image", "puppet"].includes(it.kind)) && (
         <Section name="content" title={tx("Content")}>
@@ -253,7 +256,8 @@ export function LayerInspector({ L, id, t, W, H, dur, seek, pathFor, setPathFor,
           <NumField label={tx("Ease s")} value={it.fade ?? 0.25} step={0.05} min={0} title={tx("How long the way in and the way out take")} onChange={(v) => set({ fade: v })} />
           {(["counter", "marker", "arrow", "phone", "lower", "progress"].includes(it.kind) || it.typing) && num("reveal", tx("Draw s"), 0.1, { min: 0.05, title: tx("How long it takes to draw on") })}
         </div>
-        {it.kind === "text" && <SelectField label={tx("Typing")} value={it.typing || ""} options={[["", tx("All at once")], ["chars", tx("Letter by letter")], ["words", tx("Word by word")]]} onChange={(v) => set({ typing: v || undefined, reveal: v && !it.reveal ? 1.2 : it.reveal })} />}
+        {it.kind === "text" && !it.split?.by && <SelectField label={tx("Typing")} value={it.typing || ""} options={[["", tx("All at once")], ["chars", tx("Letter by letter")], ["words", tx("Word by word")]]} onChange={(v) => set({ typing: v || undefined, reveal: v && !it.reveal ? 1.2 : it.reveal })} />}
+        {it.kind === "text" && <SplitFields it={it} set={set} />}
       </Section>
 
       {/* ---- transform ---- */}
@@ -433,5 +437,27 @@ export function MultiInspector({ L, ids, t, W, H, dur, select }: { L: Layers; id
         <button className="btn sm grow" onClick={() => all({ locked: !picked.every((x) => x.locked) || undefined })}><Lock />{tx("Lock / unlock")}</button>
       </div>
     </div>
+  );
+}
+
+/** Text that comes in part by part: each letter, word or line plays its own animation in its turn. */
+function SplitFields({ it, set }: { it: Item; set: (p: Json) => void }) {
+  const sp: Json = it.split || {};
+  const put = (p: Json) => set({ split: { ...sp, ...p } });
+  return (
+    <>
+      <SelectField label={tx("By parts")} value={sp.by || ""} options={[["", tx("Off")], ["char", tx("Each letter")], ["word", tx("Each word")], ["line", tx("Each line")]]}
+        onChange={(v) => v ? set({ split: { anim: "rise", dur: 0.5, order: "forward", ...sp, by: v, stagger: v === "char" ? 0.03 : v === "word" ? 0.08 : 0.2 }, typing: undefined, anim: it.anim || "none", animOut: it.animOut || "none" }) : set({ split: undefined })} />
+      {sp.by && (
+        <div className="g2">
+          <SelectField label={tx("Each")} value={sp.anim || "rise"} options={[["rise", tx("Rise")], ["drop", tx("Drop")], ["pop", tx("Pop")], ["fade", tx("Fade")], ["blur", tx("Blur")], ["slide", tx("Slide")], ["spin", tx("Spin")], ["wave", tx("Wave")]]} onChange={(v) => put({ anim: v })} />
+          <SelectField label={tx("Order")} value={sp.order || "forward"} options={[["forward", tx("First to last")], ["reverse", tx("Last to first")], ["center", tx("From the middle")], ["random", tx("Random")]]} onChange={(v) => put({ order: v })} />
+          <NumField label={tx("Part s")} value={sp.dur ?? 0.5} step={0.05} min={0.05} title={tx("How long each part takes to come in")} onChange={(v) => put({ dur: v ?? 0.5 })} />
+          <NumField label={tx("Gap s")} value={sp.stagger ?? 0.08} step={0.01} min={0} title={tx("Time between one part and the next")} onChange={(v) => put({ stagger: v ?? 0 })} />
+          <NumField label={tx("Delay s")} value={sp.start ?? 0} step={0.05} min={0} title={tx("When the first part starts, from the layer's start")} onChange={(v) => put({ start: v || undefined })} />
+          <label className="rowx" style={{ fontSize: 12, gap: 6 }}><input type="checkbox" checked={!!sp.out} onChange={(e) => put({ out: e.target.checked || undefined })} />{tx("Leave the same way")}</label>
+        </div>
+      )}
+    </>
   );
 }

@@ -14,8 +14,9 @@
 // zoom|spin|blur|wipe, over `fade` seconds; blend (a canvas composite mode), shadow (colour) with shadowBlur,
 // shadowX, shadowY; blur (px); fx / fy (mirror); border + borderWidth; bg2 + gradAngle (a gradient fill).
 // Text: font, size, weight, italic, align, spacing (px), lineHeight, upper, stroke, strokeWidth, typing
-// ('chars' | 'words', revealed over `reveal` s). Image: fit (fill|cover|contain), radius. Puppet: speed,
-// pkeys [{t, p: {param: value}, ease}] animate its numeric params over the film's time.
+// ('chars' | 'words', revealed over `reveal` s), split {by: char|word|line, anim, dur, stagger, start, order, out}. Image: fit (fill|cover|contain), radius. Puppet: speed,
+// pkeys [{t, p: {param: value}, ease}] animate its numeric params over the film's time. Image and video: grade
+// {exposure, contrast, saturation, temp, tint, hue, lift / gamma / gain {x, y, l}, lut (.cube), lutMix}.
 (function () {
   'use strict';
   let items = [];
@@ -204,6 +205,70 @@
     if (mode === 'words') { const p = str.split(/(\s+)/); let n = Math.floor(p.length * life), o = ''; for (let i = 0; i < n; i++) o += p[i]; return o; }
     return str.slice(0, Math.floor(str.length * life));
   }
+  // ---- text animated part by part: it.split = {by: 'char' | 'word' | 'line', anim: rise | drop | pop | fade | blur |
+  // slide | spin | wave, dur (s per part), stagger (s between parts), start (s into the layer), order: forward |
+  // reverse | center | random, out (the parts leave the same way at the end)}. Each part plays `anim` in its turn.
+  const SPLIT_ANIMS = ['rise', 'drop', 'pop', 'fade', 'blur', 'slide', 'spin', 'wave'];
+  window.VH2D_splitAnims = SPLIT_ANIMS;
+  function splitText(g, it, w, h, lt) {
+    const sp = it.split, by = sp.by;
+    if (!['char', 'word', 'line'].includes(by)) return false;
+    const size = it.size || 72;
+    g.font = `${it.italic ? 'italic ' : ''}${it.weight || 800} ${size}px ${it.font || FONT}`;
+    g.textBaseline = 'middle'; g.textAlign = 'left';
+    if (it.spacing) try { g.letterSpacing = it.spacing + 'px'; } catch (e) { /* an older browser */ }
+    const align = it.align || 'center';
+    const anchor = align === 'left' ? (it.pad ?? size * 0.3) : align === 'right' ? w - (it.pad ?? size * 0.3) : w / 2;
+    let all = String(it.text ?? '');
+    if (it.upper) all = all.toLocaleUpperCase();
+    const lines = all.split('\n'), lh = size * (it.lineHeight || 1.15);
+    // the parts, each with where it sits: [text, x, y, width]
+    const parts = [];
+    lines.forEach((ln, li) => {
+      const ty = h / 2 + (li - (lines.length - 1) / 2) * lh;
+      const lw = g.measureText(ln).width;
+      const x0 = align === 'left' ? anchor : align === 'right' ? anchor - lw : anchor - lw / 2;
+      const pieces = by === 'line' ? [ln] : by === 'word' ? ln.split(/(\s+)/) : Array.from(ln);
+      let before = '';
+      for (const pc of pieces) {
+        if (pc && !/^\s+$/.test(pc)) parts.push([pc, x0 + g.measureText(before).width, ty, g.measureText(pc).width]);
+        before += pc;
+      }
+    });
+    const n = parts.length;
+    if (!n) return true;
+    const dur = Math.max(0.01, sp.dur ?? 0.5), stagger = Math.max(0, sp.stagger ?? (by === 'char' ? 0.03 : by === 'word' ? 0.08 : 0.2)), start = sp.start || 0;
+    const order = sp.order || 'forward';
+    let turn = parts.map((_, i) => i);
+    if (order === 'reverse') turn = turn.map(i => n - 1 - i);
+    else if (order === 'center') turn = turn.map(i => Math.round(Math.abs(i - (n - 1) / 2)));
+    else if (order === 'random') { const r = turn.map(i => [rand(i + 1 + n * 0.37), i]).sort((a, b) => a[0] - b[0]); r.forEach(([, i], k) => { turn[i] = k; }); }
+    const anim = SPLIT_ANIMS.includes(sp.anim) ? sp.anim : 'rise';
+    const len = it.t1 - it.t0, last = Math.max(...turn);
+    const outAt = len - dur - last * stagger;
+    const fill = color => { g.fillStyle = color || it.color || '#fff'; };
+    parts.forEach(([pc, px, py, pw], i) => {
+      let k = clamp((lt - start - turn[i] * stagger) / dur, 0, 1);
+      if (sp.out) k = Math.min(k, 1 - clamp((lt - outAt - turn[i] * stagger) / dur, 0, 1));
+      if (k <= 0) return;
+      const e = 1 - Math.pow(1 - k, 3);
+      g.save();
+      g.globalAlpha *= anim === 'pop' || anim === 'spin' ? Math.min(1, k * 2) : e;
+      g.translate(px + pw / 2, py);
+      if (anim === 'rise') g.translate(0, (1 - e) * size * 0.6);
+      else if (anim === 'drop') g.translate(0, -(1 - e) * size * 0.6);
+      else if (anim === 'slide') g.translate((1 - e) * size * 0.8, 0);
+      else if (anim === 'pop') { const b = EASE.back(k); g.scale(0.2 + 0.8 * b, 0.2 + 0.8 * b); }
+      else if (anim === 'spin') { g.rotate(-(1 - e) * Math.PI / 2); g.scale(0.4 + 0.6 * e, 0.4 + 0.6 * e); }
+      else if (anim === 'blur' && k < 1) g.filter = `blur(${((1 - e) * 12).toFixed(2)}px)`;
+      else if (anim === 'wave') g.translate(0, (1 - e) * size * 0.4 + Math.sin((lt - turn[i] * stagger) * 5) * size * 0.08);
+      if (it.stroke) { g.lineJoin = 'round'; g.lineWidth = it.strokeWidth || size * 0.12; g.strokeStyle = it.stroke; g.strokeText(pc, -pw / 2, 0); }
+      fill(); g.fillText(pc, -pw / 2, 0);
+      g.restore();
+    });
+    try { g.letterSpacing = '0px'; } catch (e) { /* an older browser */ }
+    return true;
+  }
   function textBlock(g, it, w, h, str, color, life) {
     const size = it.size || 72;
     g.font = `${it.italic ? 'italic ' : ''}${it.weight || 800} ${size}px ${it.font || FONT}`;
@@ -320,6 +385,7 @@
           break;
         }
         case 'text':
+          if (it.split && it.split.by && splitText(g, it, w, h, t - it.t0)) break;
           textBlock(g, it, w, h, it.text, undefined, life);
           break;
         case 'counter': {
@@ -387,9 +453,209 @@
     for (const v of Object.values(VIDS)) if (!seen.has(v) && !v.paused) v.pause();
     } finally { inGroup--; }
   }
+  // ---- colour grade of a picture or a video layer: it.grade = {exposure (stops), contrast, saturation, temp,
+  // tint (-1..1), hue (degrees), lift / gamma / gain: {x, y (the wheel: -1..1), l (its brightness: -1..1)},
+  // lut (a .cube file next to the page), lutMix (0..1)}. One WebGL2 pass, the same in the preview and in
+  // renders; without WebGL2 the plain numbers fall back to a canvas filter and the wheels and LUT are left out.
+  const LUTS = {};
+  function lutOf(src) {
+    if (!src) return null;
+    if (LUTS[src]) return LUTS[src].ready ? LUTS[src] : null;
+    const L = LUTS[src] = { ready: false, tex: null };
+    pend++;
+    let done = false;
+    const fin = () => { if (!done) { done = true; pend--; settled(); } };
+    fetch(src).then(r => (r.ok ? r.text() : Promise.reject(new Error(r.status)))).then(txt => {
+      Object.assign(L, parseCube(txt)); L.ready = !!L.size;
+      if (!L.ready) console.error('LUT ' + src + ': not a .cube file');
+    }).catch(e => console.error('LUT ' + src + ': ' + (e.message || e))).finally(fin);
+    setTimeout(fin, 8000);
+    return null;
+  }
+  // a .cube file (3D, or 1D made into 3D) as {size, data: Float32Array rgb, red fastest}
+  function parseCube(txt) {
+    let n3 = 0, n1 = 0, lo = [0, 0, 0], hi = [1, 1, 1];
+    const vals = [];
+    for (const raw of txt.split(/\r?\n/)) {
+      const ln = raw.trim();
+      if (!ln || ln[0] === '#') continue;
+      const p = ln.split(/\s+/);
+      if (p[0] === 'LUT_3D_SIZE') n3 = +p[1];
+      else if (p[0] === 'LUT_1D_SIZE') n1 = +p[1];
+      else if (p[0] === 'DOMAIN_MIN') lo = p.slice(1, 4).map(Number);
+      else if (p[0] === 'DOMAIN_MAX') hi = p.slice(1, 4).map(Number);
+      else if (/^[-+.\d]/.test(p[0]) && p.length >= 3) vals.push(+p[0], +p[1], +p[2]);
+    }
+    const norm = (v, c) => (v - lo[c]) / ((hi[c] - lo[c]) || 1);
+    if (n3 >= 2 && vals.length >= n3 * n3 * n3 * 3) return { size: n3, data: new Float32Array(vals.slice(0, n3 * n3 * n3 * 3)), lo, hi, norm: false };
+    if (n1 >= 2 && vals.length >= n1 * 3) {
+      // each channel by itself through its curve, on a 33-point cube
+      const N = 33, d = new Float32Array(N * N * N * 3);
+      const at = (c, x) => { const f = Math.max(0, Math.min(1, norm(x, c))) * (n1 - 1), i = Math.min(n1 - 2, Math.floor(f)), k = f - i; return vals[i * 3 + c] * (1 - k) + vals[(i + 1) * 3 + c] * k; };
+      for (let b = 0; b < N; b++) for (let gg = 0; gg < N; gg++) for (let r = 0; r < N; r++) {
+        const o = ((b * N + gg) * N + r) * 3, v = [r, gg, b].map(q => q / (N - 1));
+        d[o] = at(0, lo[0] + v[0] * (hi[0] - lo[0])); d[o + 1] = at(1, lo[1] + v[1] * (hi[1] - lo[1])); d[o + 2] = at(2, lo[2] + v[2] * (hi[2] - lo[2]));
+      }
+      return { size: N, data: d, lo: [0, 0, 0], hi: [1, 1, 1] };
+    }
+    return { size: 0 };
+  }
+  const wheel = (w) => w && (w.x || w.y || w.l);
+  function graded(gr) {
+    if (!gr || typeof gr !== 'object' || gr.off) return false;
+    return !!(gr.exposure || gr.contrast || gr.saturation || gr.temp || gr.tint || gr.hue || wheel(gr.lift) || wheel(gr.gamma) || wheel(gr.gain) || (gr.lut && (gr.lutMix ?? 1) > 0));
+  }
+  window.VH2D_graded = graded;
+  let GL = null;
+  function glGrader() {
+    if (GL !== null) return GL;
+    GL = false;
+    try {
+      const c = document.createElement('canvas');
+      const gl = c.getContext('webgl2', { premultipliedAlpha: false, preserveDrawingBuffer: true, antialias: false });
+      if (!gl) return GL;
+      const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+      const prog = gl.createProgram();
+      gl.attachShader(prog, sh(gl.VERTEX_SHADER, `#version 300 es
+in vec2 p; out vec2 uv;
+void main() { uv = vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5); gl_Position = vec4(p, 0.0, 1.0); }`));
+      gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `#version 300 es
+precision highp float; precision highp sampler3D;
+in vec2 uv; out vec4 o;
+uniform sampler2D img; uniform sampler3D lut;
+uniform float exposure, contrast, saturation, hue, lutMix, lutSize;
+uniform vec3 wb, lift, gamma, gain, lutLo, lutHi;
+const vec3 Y = vec3(0.2126, 0.7152, 0.0722);
+void main() {
+  vec4 s = texture(img, uv);
+  vec3 c = s.a > 0.0 ? s.rgb : vec3(0.0);
+  // white balance and exposure on light, not on code values
+  vec3 lin = pow(max(c, 0.0), vec3(2.2)) * wb * exp2(exposure);
+  c = pow(max(lin, 0.0), vec3(1.0 / 2.2));
+  // lift, gamma, gain (the wheels)
+  c = c * gain + lift * (1.0 - c);
+  c = pow(max(c, 0.0), 1.0 / max(gamma, vec3(0.05)));
+  // contrast about middle grey
+  c = (c - 0.435) * (1.0 + contrast) + 0.435;
+  float l = dot(c, Y);
+  c = mix(vec3(l), c, 1.0 + saturation);
+  if (hue != 0.0) {
+    float a = radians(hue), cs = cos(a), sn = sin(a);
+    mat3 m = mat3(0.213 + cs * 0.787 - sn * 0.213, 0.213 - cs * 0.213 + sn * 0.143, 0.213 - cs * 0.213 - sn * 0.787,
+                  0.715 - cs * 0.715 - sn * 0.715, 0.715 + cs * 0.285 + sn * 0.140, 0.715 - cs * 0.715 + sn * 0.715,
+                  0.072 - cs * 0.072 + sn * 0.928, 0.072 - cs * 0.072 - sn * 0.283, 0.072 + cs * 0.928 + sn * 0.072);
+    c = m * c;
+  }
+  c = clamp(c, 0.0, 1.0);
+  if (lutMix > 0.0) {
+    vec3 q = clamp((c - lutLo) / max(lutHi - lutLo, vec3(1e-6)), 0.0, 1.0);
+    vec3 look = texture(lut, q * (lutSize - 1.0) / lutSize + 0.5 / lutSize).rgb;
+    c = mix(c, clamp(look, 0.0, 1.0), lutMix);
+  }
+  o = vec4(c, s.a);
+}`));
+      gl.bindAttribLocation(prog, 0, 'p');
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+      gl.useProgram(prog);
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      const tex = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+      for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+      // an empty 2-point cube until a LUT is asked for
+      const none = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_3D, none);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGB16F, 2, 2, 2, 0, gl.RGB, gl.FLOAT, new Float32Array(24));
+      gl.uniform1i(gl.getUniformLocation(prog, 'img'), 0);
+      gl.uniform1i(gl.getUniformLocation(prog, 'lut'), 1);
+      const U = {};
+      for (const n of ['exposure', 'contrast', 'saturation', 'hue', 'lutMix', 'lutSize', 'wb', 'lift', 'gamma', 'gain', 'lutLo', 'lutHi']) U[n] = gl.getUniformLocation(prog, n);
+      GL = { c, gl, U, none };
+    } catch (e) { console.error('colour grade: ' + (e.message || e)); GL = false; }
+    return GL;
+  }
+  function lutTex(G, L) {
+    if (L.tex) return L.tex;
+    const gl = G.gl;
+    L.tex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_3D, L.tex);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_3D, k, v);
+    gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGB16F, L.size, L.size, L.size, 0, gl.RGB, gl.FLOAT, L.data);
+    return L.tex;
+  }
+  // a wheel as an RGB push: x, y in the colour plane (red at 0°, as on a vectorscope), l the brightness
+  function wheelRgb(w, k) {
+    w = w || {};
+    const x = +w.x || 0, y = +w.y || 0, l = +w.l || 0;
+    // the chroma direction, zero-sum so a wheel alone tints without brightening
+    const r = x * 1.0 + y * 0.0, gg = x * -0.5 + y * 0.866, b = x * -0.5 + y * -0.866;
+    return [l * k[0] + r * k[1], l * k[0] + gg * k[1], l * k[0] + b * k[1]];
+  }
+  // what the grade does as numbers for the shader (also used by the fallback filter)
+  function gradeNums(gr) {
+    const t = +gr.temp || 0, ti = +gr.tint || 0;
+    const wb = [1 + t * 0.25, 1 - ti * 0.2, 1 - t * 0.25];
+    const lift = wheelRgb(gr.lift, [0.25, 0.12]);
+    const ga = wheelRgb(gr.gamma, [0.5, 0.25]).map(v => 1 + v);
+    const gn = wheelRgb(gr.gain, [0.5, 0.25]).map(v => 1 + v);
+    return { exposure: +gr.exposure || 0, contrast: +gr.contrast || 0, saturation: +gr.saturation || 0, hue: +gr.hue || 0, wb, lift, gamma: ga, gain: gn };
+  }
+  /** The element graded: a canvas the size of the source (at most 4096 a side), or null to draw it as it is. */
+  function grade(el, iw, ih, gr) {
+    if (!graded(gr)) return null;
+    const G = glGrader();
+    const L = gr.lut && (gr.lutMix ?? 1) > 0 ? lutOf(gr.lut) : null;
+    if (!G) return null;
+    const s = Math.min(1, 4096 / Math.max(iw, ih, 1));
+    const W2 = Math.max(1, Math.round(iw * s)), H2 = Math.max(1, Math.round(ih * s));
+    const { c, gl, U } = G;
+    if (c.width !== W2 || c.height !== H2) { c.width = W2; c.height = H2; }
+    gl.viewport(0, 0, W2, H2);
+    try {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, el);
+    } catch (e) { return null; /* a cross-origin file */ }
+    const n = gradeNums(gr);
+    gl.uniform1f(U.exposure, n.exposure); gl.uniform1f(U.contrast, n.contrast); gl.uniform1f(U.saturation, n.saturation); gl.uniform1f(U.hue, n.hue);
+    gl.uniform3fv(U.wb, n.wb); gl.uniform3fv(U.lift, n.lift); gl.uniform3fv(U.gamma, n.gamma); gl.uniform3fv(U.gain, n.gain);
+    gl.activeTexture(gl.TEXTURE1);
+    if (L) {
+      gl.bindTexture(gl.TEXTURE_3D, lutTex(G, L));
+      gl.uniform1f(U.lutMix, Math.max(0, Math.min(1, gr.lutMix ?? 1))); gl.uniform1f(U.lutSize, L.size);
+      gl.uniform3fv(U.lutLo, L.norm === false ? L.lo : [0, 0, 0]); gl.uniform3fv(U.lutHi, L.norm === false ? L.hi : [1, 1, 1]);
+    } else {
+      gl.bindTexture(gl.TEXTURE_3D, G.none);
+      gl.uniform1f(U.lutMix, 0); gl.uniform1f(U.lutSize, 2); gl.uniform3fv(U.lutLo, [0, 0, 0]); gl.uniform3fv(U.lutHi, [1, 1, 1]);
+    }
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    return c;
+  }
+  // without WebGL2: the plain numbers as a canvas filter
+  function gradeFilter(gr) {
+    if (!graded(gr)) return '';
+    const n = gradeNums(gr), f = [];
+    if (n.exposure) f.push(`brightness(${Math.pow(2, n.exposure / 2.2).toFixed(3)})`);
+    if (n.contrast) f.push(`contrast(${(1 + n.contrast).toFixed(3)})`);
+    if (n.saturation) f.push(`saturate(${Math.max(0, 1 + n.saturation).toFixed(3)})`);
+    if (n.hue) f.push(`hue-rotate(${n.hue.toFixed(1)}deg)`);
+    if (gr.temp > 0) f.push(`sepia(${Math.min(0.6, gr.temp * 0.35).toFixed(3)})`);
+    return f.join(' ');
+  }
+  window.VH2D_parseCube = parseCube;
+
   // a picture or a video frame in the box: stretched, cover (crop) or contain, with round corners
   function media(g, it, el, iw, ih, w, h) {
     g.save();
+    if (graded(it.grade)) {
+      const c = grade(el, iw, ih, it.grade);
+      if (c) el = c;
+      else { const f = gradeFilter(it.grade); if (f) g.filter = (g.filter && g.filter !== 'none' ? g.filter + ' ' : '') + f; }
+    }
     if (it.radius) { g.beginPath(); g.roundRect(0, 0, w, h, Math.min(it.radius, w / 2, h / 2)); g.clip(); }
     if (it.fit === 'cover' || it.fit === 'contain') {
       const s = it.fit === 'cover' ? Math.max(w / iw, h / ih) : Math.min(w / iw, h / ih);
@@ -657,6 +923,7 @@
       if (e.opacity !== undefined) g.globalAlpha *= e.opacity;
       const b = track(g, () => draw(p, tt), !!e.hidden);
       g.restore();
+      if (AUD && !e.hidden) { AUD.called.add(id); if (b) AUD.painted.add(id); if (!userEdits[id]) AUD.texts.set(id, [def.label || id, p.text]); }
       if (b) BOXES.push({ id, label: def.label || p.text || id, x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0, t0: def.t0, t1: def.t1, kind: p.text !== undefined ? 'text' : 'group', text: p.text, src: def.text, edited: !!userEdits[id], hidden: !!e.hidden });
     },
     /** A library puppet, editable like any element (move, size, turn, retime) plus its params and states.
@@ -763,6 +1030,10 @@
   // lines and pictures drawn outside el() / KE.group / KE.text / KE.puppet, which the person cannot select in
   // Linnea's Layers. Text needs no element (it becomes one by itself), and a fill over most of the frame is a
   // background, so neither counts. The film's context is watched only while the check runs.
+  // what an audit saw of the elements: called each frame, painted something, and their texts
+  let AUD = null;
+  // the starter film's placeholder words (library/film-template): left in, they are not part of the film
+  const TEMPLATE_TEXTS = ['start here', 'edit film.js, the preview reloads', 'one idea', 'per scene', 'on the word'];
   window.KE_AUDIT = async function (times) {
     const cv = target();
     if (!cv || typeof window.renderOut !== 'function') return null;
@@ -805,6 +1076,7 @@
       g0[n] = function () { if (!inGroup) { try { f(this, arguments); } catch (e) { /* only a measurement */ } } return orig.apply(this, arguments); };
     }
     const frames = [], ids = new Set();
+    AUD = { called: new Set(), painted: new Set(), texts: new Map() };
     try {
       for (const t of times || []) {
         loose = [];
@@ -824,7 +1096,11 @@
     } finally {
       for (const n of Object.keys(spy)) { if (own[n]) Object.defineProperty(g0, n, own[n]); else delete g0[n]; }
     }
-    return { W, H, elements: ids.size, frames };
+    const aud = AUD; AUD = null;
+    // elements that never drew a thing at any checked second, and the starter's placeholders still on screen
+    const empty = [...aud.called].filter(id => !aud.painted.has(id) && !userEdits[id]).map(id => ({ id, label: (aud.texts.get(id) || [id])[0] }));
+    const template = [...aud.texts].filter(([, v]) => typeof v[1] === 'string' && TEMPLATE_TEXTS.includes(v[1].trim().toLowerCase())).map(([id, v]) => ({ id, label: v[0], text: v[1] }));
+    return { W, H, elements: ids.size, frames, empty, template };
   };
   let curT = 0;
 

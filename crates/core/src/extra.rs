@@ -146,7 +146,7 @@ fn stamp(t: f64, vtt: bool) -> String {
     format!("{:02}:{:02}:{:02}{}{:03}", ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, if vtt { '.' } else { ',' }, ms % 1000)
 }
 
-fn export_subs(c: &Ctx, a: &Value) -> Result<Value> {
+pub fn export_subs(c: &Ctx, a: &Value) -> Result<Value> {
     let p = Project::open(&c.cfg, jsd(a, "project", ""))?;
     let rid = p.rid(js(a, "reel"));
     let reel = styles::resolve(&p.load_reel(&rid)?);

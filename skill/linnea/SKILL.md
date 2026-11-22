@@ -58,6 +58,16 @@ fix film.js -> hub_frame the same t -> hub_note_update id=... status=fixed reply
   panel or on its timeline, so the user cannot select, move or retime it. `hub_live` lists such drawings
   under `checks.not_editable` (boxes and seconds); the film is not done until that list is empty.
   Only a background that fills the frame may stay outside.
+- **Rule: no leftovers.** A new film starts from a starter with three placeholder scenes (Start here, One
+  idea / per scene / on the word). Replace them with the film's own scenes and delete every placeholder and
+  every `el()` that draws nothing: the Layers panel lists only what the film shows. `hub_live` lists what is
+  left under `checks.leftovers` (`template`, `empty`); the film is not done until that is gone too.
+- Layer looks the user sets by hand, kept in `hub_2d` items: `grade` on picture and video layers
+  (`{exposure, contrast, saturation, temp, tint, hue, lift / gamma / gain: {x, y, l}, lut: "vh2d/x.cube",
+  lutMix}`: grade only when the user asks), `split` on text layers (`{by: char|word|line, anim:
+  rise|drop|pop|fade|blur|slide|spin|wave, dur, stagger, order, out}`: each letter, word or line in its turn).
+- Markers: the user drops named markers on the timeline (M). `hub_2d` returns them (`markers: [{id, t, name,
+  color}]`); "the Hook marker" means that second.
 - Editable elements (KE, also in linnea2d.js): draw EVERY on-screen element of a film (titles, captions,
   cards, frames, characters, objects) through the template's `el(id, t, {label, x, y, t0, t1, text, color}, (p, tt) => ...)`
   or `KE.text(g, id, t, {text, x, y, size, color, bg, ...})`, with a stable id, reading p.text / p.color
@@ -131,7 +141,9 @@ render mode=final           only when the user says so; read the `qa` verdict an
 
 Long tools return `{job}`: call `job id=<id> wait=true` (again if it has not ended).
 
-More footage tools: `export_subs` (SRT/VTT of the reel's captions), `render_batch` (every clip, in 9:16 /
+More footage tools: `export_subs` (SRT/VTT of the reel's captions), `export_timeline` (the edit for Final
+Cut Pro, Premiere Pro, DaVinci Resolve or any EDL editor; `film=<id>` sends a film's newest render with each
+sound on its own track and the markers), `render_batch` (every clip, in 9:16 /
 1:1 / 4:5 / 16:9; only when asked), `reel_undo` (every save keeps the previous version; redo=true),
 `style_save` (the reel's look as a brand style), `"voice": {"clean": true}` in a reel (denoise, low cut,
 compression on the voice), `setup_tools` (download ffmpeg, yt-dlp, whisper, models on a fresh machine).
@@ -206,7 +218,8 @@ frame top/bottom when two react together.
   "captions": { "style": "hype", "group": 3, "size": 64, "y": 1200, "upper": false, "accent": "#FFD23F",
                 "fixes": { "Jithub": "GitHub" }, "phrases": { "many chat": "ManyChat" }, "keywords": ["free", "$20"] },
   "brand": { "accent": "#FFD23F", "ink": "#111111", "font": "Montserrat" },
-  "look": { "grain": 0.07, "vignette": 0.45 }, "music": { "src": "music/bed.mp3", "db": -20 },
+  "look": { "grain": 0.07, "vignette": 0.45 },  // a grade or "lut": "looks/x.cube" needs "asked": "<the user's words>"
+  "music": { "src": "music/bed.mp3", "db": -20 },
   "sfxProfile": "standard",                   // restrained | standard | rich
   "beats": [], "sfx": [{ "at": 24.4, "id": "vinyl-scratch" }] }
 ```

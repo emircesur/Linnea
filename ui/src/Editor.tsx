@@ -1059,6 +1059,35 @@ function NotesPanel({ proj, rid, t, seek, reload, say }: Json) {
   );
 }
 
+/** The edit in another editor: Final Cut Pro, Premiere Pro, DaVinci Resolve or any editor that reads an EDL. */
+function ExportTimeline({ proj, rid, say }: Json) {
+  const [busy, setBusy] = useState(false);
+  const go = async (format: string) => {
+    setBusy(true);
+    try {
+      const r = await tool("export_timeline", { project: proj.id, reel: rid, format });
+      const first = r.files?.[0];
+      say(tx("Timeline written: {0}", (r.files || []).map((f: Json) => String(f.file).split("/").pop()).join(", ")));
+      if (first) tool("reveal", { path: first.file }).catch(() => {});
+    } catch (e: any) {
+      say(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <span className="muted" style={{ fontSize: 12 }}>{tx("Open the edit in another editor")}</span>
+      <div className="rowx" style={{ flexWrap: "wrap", gap: 4 }}>
+        <button className="btn sm ghost" disabled={busy} title={tx("Final Cut Pro and DaVinci Resolve (FCPXML)")} onClick={() => go("fcpxml")}>Final Cut</button>
+        <button className="btn sm ghost" disabled={busy} title={tx("Premiere Pro and DaVinci Resolve (XML)")} onClick={() => go("premiere")}>Premiere</button>
+        <button className="btn sm ghost" disabled={busy} title={tx("Any editor (CMX 3600 EDL)")} onClick={() => go("edl")}>EDL</button>
+        <button className="btn sm ghost" disabled={busy} title={tx("All three, with the captions as SRT")} onClick={() => go("all")}>{tx("All")}</button>
+      </div>
+    </div>
+  );
+}
+
 function BatchRender({ proj, run, busy }: Json) {
   const [f, setF] = useState<string[]>(["9:16"]);
   const clips = proj.reels.filter((r: Json) => r.id !== "main").length;
@@ -1141,6 +1170,7 @@ function Inspector({ proj, reel, rid, total, takes, selTake, setSelTake, report,
           <button className="btn sm ghost" onClick={() => tool("export_subs", { project: proj.id, reel: rid }).then((r) => say(`SRT: ${r.file}`)).catch((e) => say(e.message))}>SRT</button>
           <button className="btn sm ghost" onClick={() => tool("export_subs", { project: proj.id, reel: rid, format: "vtt" }).then((r) => say(`VTT: ${r.file}`)).catch((e) => say(e.message))}>VTT</button>
         </div>
+        <ExportTimeline proj={proj} rid={rid} say={say} />
         <div className="list-rows">
           {renders.map((r) => (
             <div key={r.file} className="rowx" style={{ padding: "8px 0" }}>
